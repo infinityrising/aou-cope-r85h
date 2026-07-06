@@ -36,7 +36,8 @@ try:
 
     # --- B. R85H zygosity + per-ancestry + AFR HWE (Hail counts ALT=T=R85H directly) ---
     print("== B. R85H zygosity + HWE ==")
-    r = one_locus(mt, *R85H).annotate_cols(anc=anc[mt.s].ancestry_pred)
+    r = one_locus(mt, *R85H)
+    r = r.annotate_cols(anc=anc[r.s].ancestry_pred)
     print("   R85H rows found:", r.count_rows())
     zyg = r.aggregate_entries(hl.agg.filter(hl.is_defined(r.GT),
               hl.agg.group_by(r.anc, hl.agg.counter(r.GT.n_alt_alleles()))))
