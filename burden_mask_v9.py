@@ -68,7 +68,9 @@ try:
         return t.key_by(locus=t.pv.locus, alleles=t.pv.alleles).select()
 
     print("== Phase 2: per-person burden (MASK-A) + R85H cross ==")
-    mA = mt.semi_join_rows(keyed_ht(A_vids))
+    ivs = [hl.locus_interval(c, s, e, reference_genome='GRCh38') for (c, s, e) in GENES.values()]
+    mt_g = hl.filter_intervals(mt, ivs)          # indexed: reads ONLY the 11 gene regions (no genome-wide shuffle/OOM)
+    mA = mt_g.semi_join_rows(keyed_ht(A_vids))
     print("   MASK-A variants matched in exome MT:", mA.count_rows(), "of", len(A_vids))
     burden = mA.annotate_cols(bden=hl.agg.any(mA.GT.n_alt_alleles() > 0)).cols()
     r = hl.filter_intervals(mt, [hl.locus_interval('chr19', 18911007, 18911008, reference_genome='GRCh38')])
