@@ -55,10 +55,7 @@ try:
 
     # ---- Phase 2: genotype mask vids in the exome MT -> burden -> R85H cross ----
     import hail as hl
-    try:
-        hl.init(default_reference='GRCh38', gcs_requester_pays_configuration=PROJECT, quiet=True)
-    except Exception as e:
-        print("   (hail already initialized:", str(e)[:60], ")")
+    hl.init(default_reference='GRCh38', gcs_requester_pays_configuration=PROJECT, quiet=True)  # fresh kernel/cluster required
     mt = hl.read_matrix_table(EXOME_MT)
     anc = hl.import_table(ANC_GS, types={'research_id': 'str'}).key_by('research_id')
 
@@ -94,5 +91,9 @@ try:
     print("run complete")
 except Exception as e:
     import traceback
-    print("run failed:", type(e).__name__, str(e)[:300])
-    print(traceback.format_exc()[-1200:])
+    msg = str(e)
+    print("run failed:", type(e).__name__, msg[:300])
+    if any(k in (type(e).__name__ + msg).lower() for k in ('connection', 'refused', 'disconnected', 'py4j')):
+        print("  -> Hail/Spark backend is DOWN (prior OOM crash). A kernel restart may not revive it — STOP then START")
+        print("     the 'JupyterLab Spark cluster' app (fresh Spark cluster), then re-run. Phase 1 re-runs fast.")
+    print(traceback.format_exc()[-1000:])
