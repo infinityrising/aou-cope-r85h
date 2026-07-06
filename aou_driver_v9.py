@@ -62,6 +62,37 @@ try:
     print(f"  R85H by ancestry: {S['R85H_by_anc']} (AFR {S['R85H_AFR_frac']*100:.1f}%)")
     print(f"  RNA-seq N={len(rna):,}  R85H∩RNA-seq={S['R85H_RNAseq']} by anc {S['R85H_RNAseq_by_anc']}")
 
+    print("== 4. R85H het/hom zygosity (exome pgen, plink2) ==")
+    import glob, subprocess, os
+    EXP = f"{MNT}/wgs/short_read/snpindel/exome/pgen"
+    pgens = sorted(glob.glob(f"{EXP}/*.pgen"))
+    print("  pgen files:", [os.path.basename(p) for p in pgens[:8]] or "NONE")
+    cand = [p for p in pgens if any(k in os.path.basename(p).lower() for k in ('chr19', '_19_', '.19.', 'c19'))] or pgens
+    if cand:
+        pref = cand[0][:-5]
+        psam_head = subprocess.run(['bash', '-lc', f'head -2 "{pref}.psam" 2>/dev/null'], capture_output=True, text=True).stdout
+        print("  psam head:", psam_head.replace(chr(10), ' | ')[:160])
+        rr = subprocess.run(['bash', '-lc',
+            f'plink2 --pfile "{pref}" --chr 19 --from-bp 18911007 --to-bp 18911007 --export A --out /tmp/r85h 2>&1 | tail -2'],
+            capture_output=True, text=True)
+        if os.path.exists("/tmp/r85h.raw"):
+            rw = pd.read_csv("/tmp/r85h.raw", sep="\t")
+            dcols = [c for c in rw.columns if c not in ('FID', 'IID', 'PAT', 'MAT', 'SEX', 'PHENOTYPE')]
+            print(f"  raw: {len(rw):,} rows | dosage col(s) {dcols} | sample IID {rw['IID'].iloc[0] if len(rw) else 'NA'}")
+            if dcols:
+                rw['IID'] = pd.to_numeric(rw['IID'], errors='coerce')
+                rw['gt'] = rw[dcols[-1]].round()
+                m = rw.merge(anc, left_on='IID', right_on='research_id', how='inner')
+                S.update(R85H_geno_overall={int(k): int(v) for k, v in m['gt'].value_counts().items()},
+                         R85H_hom_by_anc=m[m.gt == 2].ancestry_pred.value_counts().to_dict(),
+                         R85H_het_by_anc=m[m.gt == 1].ancestry_pred.value_counts().to_dict())
+                print(f"  merged {len(m):,} | overall 0/1/2 ALT: {S['R85H_geno_overall']}")
+                print(f"  HOM-ALT by anc: {S['R85H_hom_by_anc']} | HET by anc: {S['R85H_het_by_anc']}")
+        else:
+            print("  export produced no .raw — plink2 tail:", rr.stdout[-200:])
+    else:
+        print("  no exome pgen found in", EXP)
+
     print("\n===== SUMMARY (paste this block back) =====")
     print(json.dumps(S, indent=1))
     print("run complete")
