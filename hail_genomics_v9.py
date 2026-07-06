@@ -24,14 +24,9 @@ def one_locus(mt, chrom, pos, ref, alt):
 
 try:
     import hail as hl
-    hl.init(default_reference='GRCh38', quiet=True)          # proven init form on this Dataproc app
-    try:                                                     # bill requester-pays reads to the workspace project
-        _hc = hl.spark_context()._jsc.hadoopConfiguration()
-        _hc.set('fs.gs.requester.pays.mode', 'AUTO')
-        _hc.set('fs.gs.requester.pays.project.id', PROJECT)
-        _hc.set('fs.gs.requester.pays.buckets', 'vwb-aou-datasets-controlled')
-    except Exception as _e:
-        print("  (requester-pays hadoop-conf note:", str(_e)[:80], ")")
+    # gcs_requester_pays_configuration configures Hail's GCS client (metadata reads) — REQUIRED for this bucket.
+    # It must run in a FRESH kernel (re-init on an already-initialized kernel throws 'SparkBackend requirement failed').
+    hl.init(default_reference='GRCh38', gcs_requester_pays_configuration=PROJECT, quiet=True)
     print(f"== Hail {hl.version()} | requester-pays billing = {PROJECT} ==")
 
     # --- A. open the exome MatrixTable ---
