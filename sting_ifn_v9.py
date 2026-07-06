@@ -24,27 +24,17 @@ try:
     lg=np.log2(expr+1); ifn=((lg-lg.mean())/lg.std()).mean(axis=1)
     d=pd.DataFrame({'ifn':ifn,'research_id':ifn.index}); print(f"   {len(d)} samples")
 
-    print("== B. STING dosages (plink2 exome chr5) ==")
-    pref=sorted(glob.glob(f"{BASE}/exome/pgen/*chr5*.pgen"))[0][:-5]
-    sh(f'plink2 --pfile "{pref}" --chr 5 --from-bp 139477000 --to-bp 139482000 --export A --out /tmp/sting 2>/tmp/plog')
-    r5=pd.read_csv("/tmp/sting.raw",sep="\t"); st=pd.DataFrame({'research_id':r5['IID'].astype('int64')})
-    for name,(pos,ref,alt) in STING.items():
-        col=[c for c in r5.columns if str(pos) in c]
-        if col:
-            c=col[0]; counted=c.rsplit('_',1)[-1]; dose=pd.to_numeric(r5[c],errors='coerce')
-            st[name]= dose if counted==alt else (2-dose)      # orient to ALT (variant) allele
-        else: st[name]=np.nan; print(f"   {name}: NOT FOUND")
-    print("   ALT dose means:", {k:round(float(st[k].mean()),3) for k in STING})
-
-    print("== C. join R85H + ancestry ==")
+    print("== B/C. STING + R85H carrier status via BigQuery (app-agnostic; binary — dosage refines later) ==")
     from google.cloud import bigquery
     bq=bigquery.Client(); T=f"`{PROJ}.{DS}.cb_variant_to_person`"
-    r85h=set(int(r.pid) for r in bq.query(f"SELECT DISTINCT e.element pid FROM {T}, UNNEST(person_ids.list) e WHERE vid='{R85H_VID}'"))
+    def carr(vid): return set(int(r.pid) for r in bq.query(f"SELECT DISTINCT e.element pid FROM {T}, UNNEST(person_ids.list) e WHERE vid='{vid}'"))
+    SVID={'R71H':'5-139481493-C-T','G230A':'5-139478340-C-G','R293Q':'5-139477397-C-T','R220H':'5-139478370-C-T'}
+    scar={k:carr(v) for k,v in SVID.items()}; r85h=carr(R85H_VID)
     anc=pd.read_csv(ANC,sep="\t",usecols=['research_id','ancestry_pred']); anc['research_id']=anc.research_id.astype('int64')
-    d=d.merge(st,on='research_id',how='inner').merge(anc,on='research_id',how='left')
-    d['R85H']=d.research_id.isin(r85h).astype(int)
-    d['AQ']=((d.G230A>0)&(d.R293Q>0)&(d.R71H==0)).astype(int)   # AQ-strict proxy (unphased)
-    print(f"   RNA∩STING {len(d)} | R85H {int(d.R85H.sum())} | AQ-proxy {int(d.AQ.sum())}")
+    d=d.merge(anc,on='research_id',how='left'); d['R85H']=d.research_id.isin(r85h).astype(int)
+    for k in SVID: d[k]=d.research_id.isin(scar[k]).astype(int)
+    d['AQ']=((d.G230A==1)&(d.R293Q==1)&(d.R71H==0)).astype(int)   # AQ-strict proxy (carriage, unphased)
+    print(f"   RNA∩ancestry {int(d.ancestry_pred.notna().sum())} | R85H {int(d.R85H.sum())} | AQ-proxy {int(d.AQ.sum())} | R220H {int(d.R220H.sum())}")
 
     import statsmodels.formula.api as smf
     a=d[d.ancestry_pred=='afr'].dropna(subset=['ifn'])
