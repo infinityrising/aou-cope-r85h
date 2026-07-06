@@ -65,31 +65,35 @@ try:
     print("== 4. R85H het/hom zygosity (exome pgen, plink2) ==")
     import glob, subprocess, os
     EXP = f"{MNT}/wgs/short_read/snpindel/exome/pgen"
-    pgens = sorted(glob.glob(f"{EXP}/*.pgen"))
-    print("  pgen files:", [os.path.basename(p) for p in pgens[:8]] or "NONE")
-    cand = [p for p in pgens if any(k in os.path.basename(p).lower() for k in ('chr19', '_19_', '.19.', 'c19'))] or pgens
-    if cand:
-        pref = cand[0][:-5]
-        psam_head = subprocess.run(['bash', '-lc', f'head -2 "{pref}.psam" 2>/dev/null'], capture_output=True, text=True).stdout
-        print("  psam head:", psam_head.replace(chr(10), ' | ')[:160])
-        rr = subprocess.run(['bash', '-lc',
-            f'plink2 --pfile "{pref}" --chr 19 --from-bp 18911007 --to-bp 18911007 --export A --out /tmp/r85h 2>&1 | tail -2'],
+    pgens = glob.glob(f"{EXP}/*chr19*.pgen") or sorted(glob.glob(f"{EXP}/*.pgen"))
+    if pgens:
+        pref = sorted(pgens)[0][:-5]
+        subprocess.run(['bash', '-lc',
+            f'plink2 --pfile "{pref}" --chr 19 --from-bp 18911007 --to-bp 18911007 --export A --out /tmp/r85h 2>/tmp/plink.log'],
             capture_output=True, text=True)
         if os.path.exists("/tmp/r85h.raw"):
             rw = pd.read_csv("/tmp/r85h.raw", sep="\t")
-            dcols = [c for c in rw.columns if c not in ('FID', 'IID', 'PAT', 'MAT', 'SEX', 'PHENOTYPE')]
-            print(f"  raw: {len(rw):,} rows | dosage col(s) {dcols} | sample IID {rw['IID'].iloc[0] if len(rw) else 'NA'}")
-            if dcols:
-                rw['IID'] = pd.to_numeric(rw['IID'], errors='coerce')
-                rw['gt'] = rw[dcols[-1]].round()
-                m = rw.merge(anc, left_on='IID', right_on='research_id', how='inner')
-                S.update(R85H_geno_overall={int(k): int(v) for k, v in m['gt'].value_counts().items()},
-                         R85H_hom_by_anc=m[m.gt == 2].ancestry_pred.value_counts().to_dict(),
-                         R85H_het_by_anc=m[m.gt == 1].ancestry_pred.value_counts().to_dict())
-                print(f"  merged {len(m):,} | overall 0/1/2 ALT: {S['R85H_geno_overall']}")
-                print(f"  HOM-ALT by anc: {S['R85H_hom_by_anc']} | HET by anc: {S['R85H_het_by_anc']}")
+            dose_col = rw.columns[-1]                       # last column = the variant dosage
+            counted = dose_col.rsplit('_', 1)[-1]           # allele plink2 counted (suffix after last '_')
+            v = rw[['IID', dose_col]].copy(); v.columns = ['IID', 'd']
+            v['IID'] = pd.to_numeric(v['IID'], errors='coerce')
+            v['d'] = pd.to_numeric(v['d'], errors='coerce')
+            v = v.dropna()
+            # R85H = the T (ALT) allele; if plink2 counted the ref/other allele, invert to count T
+            v['alt'] = (v['d'] if counted == 'T' else 2 - v['d']).round().astype(int)
+            m = v.merge(anc, left_on='IID', right_on='research_id', how='inner')
+            overall = {int(k): int(n) for k, n in m['alt'].value_counts().items()}
+            hom = m.loc[m['alt'] == 2].groupby('ancestry_pred').size().astype(int).to_dict()
+            het = m.loc[m['alt'] == 1].groupby('ancestry_pred').size().astype(int).to_dict()
+            S.update(R85H_counted_allele=counted, R85H_geno_overall=overall, R85H_hom_by_anc=hom,
+                     R85H_het_by_anc=het, R85H_carriers_from_geno=int(overall.get(1, 0) + overall.get(2, 0)))
+            print(f"  dose col {dose_col} | counted allele={counted} | overall {{R85H_alleles:N}}: {overall}")
+            print(f"  carriers from geno (het+hom) = {S['R85H_carriers_from_geno']:,}  (should ≈ 3,135)")
+            print(f"  ★ HOM R85H by ancestry: {hom}")
+            print(f"  HET R85H by ancestry: {het}")
         else:
-            print("  export produced no .raw — plink2 tail:", rr.stdout[-200:])
+            print("  no .raw — plink2 log:",
+                  subprocess.run(['bash', '-lc', 'tail -3 /tmp/plink.log'], capture_output=True, text=True).stdout[-200:])
     else:
         print("  no exome pgen found in", EXP)
 
