@@ -25,7 +25,7 @@ STING_IV=('5',139475528,139482935)
 STING_POS={139481493:('R71H','C','T'),139478340:('G230A','C','G'),139477397:('R293Q','C','T'),139478370:('R220H','C','T')}
 STNAMES=['R71H','G230A','R293Q','R220H']
 FIELDS=['research_id','hap1','hap2','HAQ_d','AQ_d','R220H_d','R85H_d','copi_dmg','dmg_genes','dmg_vids','pav_novel']
-NW=4
+NW=int(os.environ.get("COPI_NW","4"))   # I/O-bound; on the STANDARD app set COPI_NW=16 for ~4x speed. Dataproc: keep <=6 (driver RAM).
 def log(m): print(m,file=sys.stderr,flush=True)
 def gs2mnt(p): return (MNT+"/"+p[len(GS):]) if isinstance(p,str) and p.startswith(GS) else None
 def fnum(x):
