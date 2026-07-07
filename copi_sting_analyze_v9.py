@@ -65,6 +65,7 @@ try:
     anc=pd.read_csv(ANC,sep="\t"); anc['research_id']=anc.research_id.astype(str)
     d=g.merge(isgdf,on='research_id',how='inner').merge(anc[['research_id','ancestry_pred']],on='research_id',how='left')
     d['R85H']=d.research_id.isin(r85h_bq).astype(int); d['HAQ']=(d.HAQ_d>0).astype(int)
+    d['AQ']=(d.AQ_d>0).astype(int); d['HYPO']=((d.HAQ_d>0)|(d.AQ_d>0)).astype(int)   # AQ-strict = pre-reg PRIMARY; HYPO = either hypomorph (powered)
     d['COPImut']=(d.research_id.isin(copi_bq)|(d.R85H>0)).astype(int)
     # ---- covariates (each optional; degrade gracefully) ----
     COVcols=[]
@@ -91,9 +92,9 @@ try:
     COV=(" + "+" + ".join(COVcols)) if COVcols else ""
     S['covariates']=COVcols; print(f"   COVARIATE SET: {COVcols}")
     a=d[d.ancestry_pred=='afr'].copy()
-    S['n_ifn_join']=len(d); S['n_afr']=len(a); S['afr_R85H']=int(a.R85H.sum()); S['afr_HAQ']=int(a.HAQ.sum()); S['afr_COPImut']=int(a.COPImut.sum())
+    S['n_ifn_join']=len(d); S['n_afr']=len(a); S['afr_R85H']=int(a.R85H.sum()); S['afr_HAQ']=int(a.HAQ.sum()); S['afr_AQ']=int(a.AQ.sum()); S['afr_HYPO']=int(a.HYPO.sum()); S['afr_COPImut']=int(a.COPImut.sum())
     if 'R85H_d' in g.columns: S['R85H_PAV_vs_BQ']={'pav':int((d.R85H_d>0).sum()),'bq':int(d.R85H.sum())}
-    print(f"   ISG-joined {len(d)} | AFR {len(a)} | R85H(AFR) {int(a.R85H.sum())} | HAQ(AFR) {int(a.HAQ.sum())} | COPImut(AFR) {int(a.COPImut.sum())}")
+    print(f"   ISG-joined {len(d)} | AFR {len(a)} | R85H {int(a.R85H.sum())} | HAQ {int(a.HAQ.sum())} | AQ {int(a.AQ.sum())} | HYPO {int(a.HYPO.sum())} | COPImut {int(a.COPImut.sum())}")
     import statsmodels.formula.api as smf
     def ols(f,dd,term):
         try: r=smf.ols(f,data=dd,missing='drop').fit(); return {'beta':round(float(r.params[term]),4),'p':round(float(r.pvalues[term]),4),'n':int(r.nobs)}
@@ -102,22 +103,22 @@ try:
     for t in ['HAQ_d','AQ_d','R220H_d']:
         S[f'ladder_all_{t}']=ols(f'ifn ~ {t} + C(ancestry_pred){COV}',d,t); S[f'ladder_afr_{t}']=ols(f'ifn ~ {t}{COV}',a,t)
         print(f"   ifn~{t}: ALL {S[f'ladder_all_{t}']} | AFR {S[f'ladder_afr_{t}']}")
-    print("== FLAGSHIP: R85H × HAQ -> ISG, covariate-adjusted (HAQ protective => R85H:HAQ NEGATIVE) ==")
-    def cells(dd,col='ifn'):
+    print("== FLAGSHIP: R85H × modifier -> ISG (protective => interaction NEGATIVE). AQ-strict = PRE-REG PRIMARY ==")
+    def cells(dd,mod,col='ifn'):
         out={}
         for r in (0,1):
             for h in (0,1):
-                sub=dd[(dd.R85H==r)&(dd.HAQ==h)][col].dropna()
-                out[f'R85H{r}_HAQ{h}']={'mean':round(float(sub.mean()),3) if len(sub) else None,'n':int(len(sub))}
+                sub=dd[(dd.R85H==r)&(dd[mod]==h)][col].dropna()
+                out[f'R85H{r}_{mod}{h}']={'mean':round(float(sub.mean()),3) if len(sub) else None,'n':int(len(sub))}
         return out
-    S['cells_afr']=cells(a); S['cells_all']=cells(d)
-    print("   AFR 2x2 (raw means):",S['cells_afr']); print("   ALL 2x2:",S['cells_all'])
-    S['inter_afr_adj']=ols(f'ifn ~ R85H*HAQ{COV}',a,'R85H:HAQ')
-    S['inter_all_adj']=ols(f'ifn ~ R85H*HAQ + C(ancestry_pred){COV}',d,'R85H:HAQ')
-    S['inter_afr_crude']=ols('ifn ~ R85H*HAQ',a,'R85H:HAQ')
-    S['inter_afr_adj_5gene']=ols(f'ifn5 ~ R85H*HAQ{COV}',a,'R85H:HAQ')
-    print("   R85H:HAQ  AFR crude",S['inter_afr_crude']); print("             AFR adj  ",S['inter_afr_adj'])
-    print("             ALL adj  ",S['inter_all_adj']); print("             AFR adj 5-gene",S['inter_afr_adj_5gene'])
+    for mod in ['HAQ','AQ','HYPO']:
+        S[f'cells_afr_{mod}']=cells(a,mod); S[f'cells_all_{mod}']=cells(d,mod)
+        S[f'inter_crude_afr_{mod}']=ols(f'ifn ~ R85H*{mod}',a,f'R85H:{mod}')
+        S[f'inter_adj_afr_{mod}']=ols(f'ifn ~ R85H*{mod}{COV}',a,f'R85H:{mod}')
+        S[f'inter_adj_all_{mod}']=ols(f'ifn ~ R85H*{mod} + C(ancestry_pred){COV}',d,f'R85H:{mod}')
+        S[f'inter_adj5_afr_{mod}']=ols(f'ifn5 ~ R85H*{mod}{COV}',a,f'R85H:{mod}')
+        print(f"   [{mod}] AFR 2x2 {S[f'cells_afr_{mod}']}")
+        print(f"        AFR crude {S[f'inter_crude_afr_{mod}']} | AFR adj {S[f'inter_adj_afr_{mod}']} | ALL adj {S[f'inter_adj_all_{mod}']} | 5g {S[f'inter_adj5_afr_{mod}']}")
     print("== BROADER: any damaging COPI × HAQ -> ISG, adjusted ==")
     S['inter_COPImut_all_adj']=ols(f'ifn ~ COPImut*HAQ + C(ancestry_pred){COV}',d,'COPImut:HAQ')
     print("   COPImut:HAQ (ALL adj):",S['inter_COPImut_all_adj'])
