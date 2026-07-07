@@ -12,7 +12,9 @@ MNT=os.path.expanduser("~/workspace/vwb-aou-datasets-controlled-v9"); SNP=f"{MNT
 ANC=f"{SNP}/aux/ancestry/ancestry_preds.tsv"
 CDR="wb-silky-artichoke-2408.C2025Q4R6"; PROJ,DS=CDR.split(".",1); R85H_VID='19-18911007-C-T'
 CSV=os.path.expanduser("~/sting_phenome_pav_v9.csv")
-PHENO={'ILD':['J84%','515%','516%','J98.4','D86%'],'arthritis':['M05%','M06%','M08%','714%'],'vasculitis':['M31.3%','M31.7%','M30%','M31%','446%','I77.6']}
+# INFLAMMATORY arthritis ONLY (RA M05/M06, psoriatic/enteropathic M07, juvenile M08, ICD-9 714 inflammatory polyarthropathies).
+# EXCLUDES osteoarthritis (ICD-10 M15-M19 / ICD-9 715) by construction. COPA-spectrum arthritis is seronegative inflammatory polyarthritis.
+PHENO={'ILD':['J84%','515%','516%','J98.4','D86%'],'infl_arthritis':['M05%','M06%','M07%','M08%','714%'],'vasculitis':['M31.3%','M31.7%','M30%','M31%','446%','I77.6']}
 S={}
 def sc_of(r):
     h={r.hap1,r.hap2}
@@ -69,13 +71,13 @@ try:
     S['prev_R85Hneg']=prev(d[d.R85H==0]); S['prev_R85Hpos']=prev(d[d.R85H==1])
     print("   R85H- :",S['prev_R85Hneg']); print("   R85H+ :",S['prev_R85Hpos'])
     print("== R85H × STING -> phenotype (logistic, PC/age/sex-adj) ==")
-    for out in ['COPA','ILD','arthritis','vasculitis']:
+    for out in ['COPA','ILD','infl_arthritis','vasculitis']:
         S[f'{out}_R85HxAQ']=logit(f'{out} ~ R85H*AQ + C(ancestry_pred){COV}',d,'R85H:AQ')
         S[f'{out}_R85HxHAQ']=logit(f'{out} ~ R85H*HAQ + C(ancestry_pred){COV}',d,'R85H:HAQ')
         print(f"   {out}: R85H×AQ {S[f'{out}_R85HxAQ']} | R85H×HAQ {S[f'{out}_R85HxHAQ']}")
     print("== within R85H carriers (n≈138): AQ -> phenotype ==")
     rp=d[d.R85H==1]
-    for out in ['COPA','ILD','arthritis','vasculitis']:
+    for out in ['COPA','ILD','infl_arthritis','vasculitis']:
         S[f'within_AQ_{out}']=logit(f'{out} ~ AQ + C(ancestry_pred)',rp,'AQ')
         print(f"   R85H+ {out} ~ AQ: {S[f'within_AQ_{out}']}")
     print("\n===== PHENOME R85H×STING (paste back) ====="); print(json.dumps(S,indent=1,default=str)); print("run complete")
