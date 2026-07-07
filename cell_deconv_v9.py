@@ -29,16 +29,22 @@ try:
     m=pd.read_csv(io.StringIO(raw),sep="\t"); m['ensg']=m.gene_id.str.split('.').str[0]
     m=m[m.ensg.isin(allids)].set_index('ensg').drop(columns=['gene_id','transcript_id(s)'])
     expr=m.T.astype(float); expr.index=expr.index.astype(str); lg=np.log2(expr+1); z=(lg-lg.mean())/lg.std()
-    out=pd.DataFrame(index=expr.index); qc={}
+    raw=pd.DataFrame(index=expr.index); qc={}
     for ct,dd in MARKERS.items():
         present=[e for e in dd.values() if e in z.columns]; qc[ct]=f"{len(present)}/{len(dd)}"
-        out[ct]=z[present].mean(axis=1) if present else np.nan
-    out['research_id']=out.index; out.to_csv(OUT,index=False)
-    print("markers found per type:",qc); print(f"cell scores -> {OUT} ({len(out)} persons)")
-    print(out[list(MARKERS.keys())].describe().round(3).to_string())
-    # sanity: pDC/mono scores should positively correlate with a monocyte ISG readout; neut anti-correlate
-    print("inter-type corr (neut vs lymphoid should be negative):")
-    print(out[list(MARKERS.keys())].corr().round(2).to_string())
+        raw[ct]=z[present].mean(axis=1) if present else np.nan
+    print("markers found per type:",qc)
+    print("RAW (cross-sample z) corr — a global technical axis inflates ALL pairs (myeloid-lymphoid NOT negative):")
+    print(raw.corr().round(2).to_string())
+    # --- compositional fix (CLR-like): remove the per-sample global axis so scores become RELATIVE composition ---
+    libaxis=raw.mean(axis=1)                 # global technical/RNA-quality/detection axis (kept as a covariate)
+    cent=raw.sub(libaxis,axis=0)             # per-sample centered => relative composition (myeloid vs lymphoid now trade off)
+    print("CENTERED (compositional) corr — myeloid (neut/mono) vs lymphoid (cd4t/cd8t/bcell/nk) should now be NEGATIVE:")
+    print(cent.corr().round(2).to_string())
+    REF='neut'                               # drop one (reference) to avoid sum-to-0 collinearity; keep mono+pdc (ISG-relevant)
+    out=cent.drop(columns=[REF]).copy(); out['libaxis']=libaxis; out['research_id']=out.index
+    out.to_csv(OUT,index=False)
+    print(f"cell composition (6 centered + libaxis; ref={REF}) -> {OUT} ({len(out)} persons)")
     print("run complete")
 except Exception as e:
     import traceback; print("run failed:",type(e).__name__,str(e)[:300]); print(traceback.format_exc()[-1000:])
