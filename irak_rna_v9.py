@@ -53,7 +53,7 @@ try:
             inl=",".join("'"+v+"'" for v in vids[i:i+900])
             out|=set(str(r.pid) for r in bq.query(f"SELECT DISTINCT e.element pid FROM {T}, UNNEST(person_ids.list) e WHERE vid IN ({inl})"))
         return out
-    anc=pd.read_csv(ANC,sep="\t",usecols=['research_id','ancestry_pred']); anc['research_id']=anc.research_id.astype(str)
+    anc=pd.read_csv(ANC,sep="\t"); anc['research_id']=anc.research_id.astype(str)
     amap=dict(zip(anc.research_id,anc.ancestry_pred))
     r85h=carriers([R85H_VID]); r85h_rna=r85h & rna_ids
     gene_car={}; gene_car_rna={}
@@ -67,17 +67,34 @@ try:
     S['R85H_x_IRAK_RNA_doublecarriers']=len(r85h_rna & irak_any_rna)
     print(f"   ANY IRAK1/3/4 ∩RNA = {len(irak_any_rna)} | R85H∩RNA = {len(r85h_rna)} | R85H×IRAK double ∩RNA = {len(r85h_rna & irak_any_rna)}")
     print("== IRAK-mut -> ISG (IRAK3-LoF negative regulator => expect POSITIVE beta) ==")
-    d=isgdf.merge(anc,on='research_id',how='left'); d['R85H']=d.research_id.isin(r85h).astype(int)
+    d=isgdf.merge(anc[['research_id','ancestry_pred']],on='research_id',how='left'); d['R85H']=d.research_id.isin(r85h).astype(int)
     d['IRAK_any']=d.research_id.isin(irak_any_rna).astype(int)
     for g in IRAK: d[g]=d.research_id.isin(gene_car_rna[g]).astype(int)
+    import ast; COVcols=[]   # full covariates: PCs + cell composition + age/sex (mirror the flagship analyzer)
+    try:
+        if 'pca_features' in anc.columns:
+            P=anc['pca_features'].apply(lambda x: ast.literal_eval(x) if isinstance(x,str) else (x if isinstance(x,list) else []))
+            k=min(min(map(len,P[P.map(len)>0])) if (P.map(len)>0).any() else 0,16)
+            pcs=pd.DataFrame([row[:k] for row in P],columns=[f'PC{i+1}' for i in range(k)]); pcs['research_id']=anc.research_id.values
+            d=d.merge(pcs,on='research_id',how='left'); COVcols+=[f'PC{i+1}' for i in range(k)]
+    except Exception as ex: print("   (PCs skipped:",str(ex)[:50],")")
+    try:
+        cf=pd.read_csv(os.path.expanduser("~/cell_fractions_v9.csv")); cf['research_id']=cf.research_id.astype(str)
+        ctc=[c for c in cf.columns if c!='research_id']; d=d.merge(cf,on='research_id',how='left'); COVcols+=ctc
+    except Exception as ex: print("   (cell skipped — run cell_deconv_v9.py:",str(ex)[:40],")")
+    try:
+        ppl=bq.query(f"SELECT person_id, DATE_DIFF(DATE '2025-01-01', DATE(birth_datetime), YEAR) age, CAST(sex_at_birth_concept_id AS STRING) sexc FROM `{PROJ}.{DS}.person`").to_dataframe()
+        ppl['research_id']=ppl.person_id.astype(str); d=d.merge(ppl[['research_id','age','sexc']],on='research_id',how='left'); COVcols+=['age','C(sexc)']
+    except Exception as ex: print("   (age/sex skipped:",str(ex)[:50],")")
+    COV=(" + "+" + ".join(COVcols)) if COVcols else ""; print(f"   COVARIATE SET: {COVcols}")
     a=d[d.ancestry_pred=='afr']
     import statsmodels.formula.api as smf
     def ols(f,dd,term):
-        try: r=smf.ols(f,data=dd.dropna(subset=['ifn'])).fit(); return {'beta':round(float(r.params[term]),4),'p':round(float(r.pvalues[term]),4),'n':int(r.nobs),'n_carr':int(dd[term].sum()) if term in dd else None}
+        try: r=smf.ols(f,data=dd,missing='drop').fit(); return {'beta':round(float(r.params[term]),4),'p':round(float(r.pvalues[term]),4),'n':int(r.nobs),'n_carr':int(dd[term].sum()) if term in dd else None}
         except Exception as e: return {'error':str(e)[:60]}
-    for term in ['IRAK_any','IRAK3','IRAK4','IRAK1','MYD88']:
-        S[f'isg_{term}_all']=ols(f'ifn ~ {term} + C(ancestry_pred)',d,term); S[f'isg_{term}_afr']=ols(f'ifn ~ {term}',a,term)
-        print(f"   ISG~{term}: ALL {S[f'isg_{term}_all']} | AFR {S[f'isg_{term}_afr']}")
+    for term in ['IRAK_any','IRAK3','IRAK4']:
+        S[f'isg_{term}_all']=ols(f'ifn ~ {term} + C(ancestry_pred)',d,term); S[f'isg_{term}_all_adj']=ols(f'ifn ~ {term} + C(ancestry_pred){COV}',d,term); S[f'isg_{term}_afr_adj']=ols(f'ifn ~ {term}{COV}',a,term)
+        print(f"   ISG~{term}: ALL {S[f'isg_{term}_all']} | ALL+cov {S[f'isg_{term}_all_adj']} | AFR+cov {S[f'isg_{term}_afr_adj']}")
     print("== R85H × IRAK two-hit -> ISG ==")
     d['inter']=d.R85H*d.IRAK_any
     S['R85H_x_IRAK']=ols('ifn ~ R85H + IRAK_any + inter + C(ancestry_pred)',d,'inter')

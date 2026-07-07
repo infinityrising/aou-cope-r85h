@@ -134,6 +134,11 @@ try:
     for hap in ['AQ_d','HAQ_d']:   # 1 vs 2 copies (het vs hom dose)
         S[f'R85Hp_by_{hap}']={int(x):{'n':int((rp[hap]==x).sum()),'mean_ifn':round(float(rp[rp[hap]==x].ifn.mean()),3) if (rp[hap]==x).any() else None} for x in sorted(rp[hap].unique())}
         print(f"   R85H+ by {hap} (0/1/2 = WT/het/hom): {S[f'R85Hp_by_{hap}']}")
+    def penet(dd):
+        dd=dd.copy(); dd['sc']=dd.apply(sting_class,axis=1)
+        return {c:{'n':int((dd.sc==c).sum()),'pct_IFN_gt1SD':round(float((dd[dd.sc==c].ifn>1).mean()*100),1) if (dd.sc==c).any() else None} for c in ['WT/other','HAQ','AQ']}
+    S['penet_R85Hneg']=penet(a[a.R85H==0]); S['penet_R85Hpos']=penet(a[a.R85H==1])
+    print("   CONTROL penetrance (%IFN>1SD, both hits required): R85H-",S['penet_R85Hneg']," | R85H+",S['penet_R85Hpos'])
     for lab,form,dd in [('AFR crude','ifn ~ R85H*HAQ_d + R85H*AQ_d',a),('AFR adj',f'ifn ~ R85H*HAQ_d + R85H*AQ_d{COV}',a),('ALL adj',f'ifn ~ R85H*HAQ_d + R85H*AQ_d + C(ancestry_pred){COV}',d)]:
         S[f'joint_HAQ_{lab}']=ols(form,dd,'R85H:HAQ_d'); S[f'joint_AQ_{lab}']=ols(form,dd,'R85H:AQ_d')
         print(f"   [{lab}] R85H:HAQ_d {S[f'joint_HAQ_{lab}']} | R85H:AQ_d {S[f'joint_AQ_{lab}']}")

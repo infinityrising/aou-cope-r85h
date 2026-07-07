@@ -14,7 +14,9 @@ import pysam
 MNT=os.path.expanduser("~/workspace/vwb-aou-datasets-controlled-v9"); GS="gs://vwb-aou-datasets-controlled/"
 LR=f"{MNT}/v9/wgs/long_read"; RNADIR=f"{MNT}/v9/multiomics/rnaseq"
 CDR="wb-silky-artichoke-2408.C2025Q4R6"; PROJ,DS=CDR.split(".",1); R85H_VID='19-18911007-C-T'
-OUT=os.path.expanduser("~/sting_only_pav_v9.csv"); ATT=os.path.expanduser("~/sting_only_pav_v9.attempted")
+PHENOME=int(os.environ.get("PHENOME","0"))   # 1 = ALL PAV (phenome arm — EHR, not RNA-gated); 0 = RNA∩PAV
+OUT=os.path.expanduser("~/sting_phenome_pav_v9.csv" if PHENOME else "~/sting_only_pav_v9.csv")
+ATT=os.path.expanduser("~/sting_phenome_pav_v9.attempted" if PHENOME else "~/sting_only_pav_v9.attempted")
 STING_IV=('5',139475528,139482935)
 STING_POS={139481493:('R71H','C','T'),139478340:('G230A','C','G'),139477397:('R293Q','C','T'),139478370:('R220H','C','T')}
 STNAMES=['R71H','G230A','R293Q','R220H']
@@ -60,8 +62,9 @@ def parse_patient(rid,pav):
 try:
     man=pd.read_csv(f"{LR}/manifest.tsv",sep="\t"); man['research_id']=man.research_id.astype(str)
     man=man[man.grch38_pav_vcf.notna()].drop_duplicates('research_id')
-    rna=set(pd.read_csv(f"{RNADIR}/manifest.tsv",sep="\t",usecols=['research_id']).research_id.astype(str))
-    man=man[man.research_id.isin(rna)]
+    if not PHENOME:
+        rna=set(pd.read_csv(f"{RNADIR}/manifest.tsv",sep="\t",usecols=['research_id']).research_id.astype(str))
+        man=man[man.research_id.isin(rna)]
     from google.cloud import bigquery
     bq=bigquery.Client(); T=f"`{PROJ}.{DS}.cb_variant_to_person`"
     r85h=set(str(r.pid) for r in bq.query(f"SELECT DISTINCT e.element pid FROM {T}, UNNEST(person_ids.list) e WHERE vid='{R85H_VID}'"))
