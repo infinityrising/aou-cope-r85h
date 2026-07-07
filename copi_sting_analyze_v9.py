@@ -119,6 +119,24 @@ try:
         S[f'inter_adj5_afr_{mod}']=ols(f'ifn5 ~ R85H*{mod}{COV}',a,f'R85H:{mod}')
         print(f"   [{mod}] AFR 2x2 {S[f'cells_afr_{mod}']}")
         print(f"        AFR crude {S[f'inter_crude_afr_{mod}']} | AFR adj {S[f'inter_adj_afr_{mod}']} | ALL adj {S[f'inter_adj_all_{mod}']} | 5g {S[f'inter_adj5_afr_{mod}']}")
+    print("== CORRECTED (common WT reference): mutually-exclusive STING classes + JOINT dosage model ==")
+    S['n_compound_HAQ_AQ']=int(((d.HAQ_d>0)&(d.AQ_d>0)).sum()); S['n_compound_afr_R85Hp']=int(((a.R85H==1)&(a.HAQ_d>0)&(a.AQ_d>0)).sum())
+    print(f"   compound HAQ+AQ persons (HAQ on one allele, AQ on the other): cohort {S['n_compound_HAQ_AQ']} | AFR R85H+ {S['n_compound_afr_R85Hp']}")
+    def sting_class(r):
+        h={r.hap1,r.hap2}
+        if 'HAQ' in h and 'AQ' in h: return 'HAQ/AQ'
+        if 'HAQ' in h: return 'HAQ'
+        if 'AQ' in h: return 'AQ'
+        return 'WT/other'
+    rp=a[a.R85H==1].copy(); rp['sc']=rp.apply(sting_class,axis=1)
+    S['R85Hp_by_sting_class']={c:{'n':int((rp.sc==c).sum()),'mean_ifn':round(float(rp[rp.sc==c].ifn.mean()),3) if (rp.sc==c).any() else None,'median':round(float(rp[rp.sc==c].ifn.median()),3) if (rp.sc==c).any() else None,'n_IFN_activated_gt1SD':int((rp[rp.sc==c].ifn>1).sum())} for c in ['WT/other','HAQ','AQ','HAQ/AQ']}
+    print("   AFR R85H+ by CLEAN STING class (mean/median/penetrance=n>1SD, each vs WT):",S['R85Hp_by_sting_class'])
+    for hap in ['AQ_d','HAQ_d']:   # 1 vs 2 copies (het vs hom dose)
+        S[f'R85Hp_by_{hap}']={int(x):{'n':int((rp[hap]==x).sum()),'mean_ifn':round(float(rp[rp[hap]==x].ifn.mean()),3) if (rp[hap]==x).any() else None} for x in sorted(rp[hap].unique())}
+        print(f"   R85H+ by {hap} (0/1/2 = WT/het/hom): {S[f'R85Hp_by_{hap}']}")
+    for lab,form,dd in [('AFR crude','ifn ~ R85H*HAQ_d + R85H*AQ_d',a),('AFR adj',f'ifn ~ R85H*HAQ_d + R85H*AQ_d{COV}',a),('ALL adj',f'ifn ~ R85H*HAQ_d + R85H*AQ_d + C(ancestry_pred){COV}',d)]:
+        S[f'joint_HAQ_{lab}']=ols(form,dd,'R85H:HAQ_d'); S[f'joint_AQ_{lab}']=ols(form,dd,'R85H:AQ_d')
+        print(f"   [{lab}] R85H:HAQ_d {S[f'joint_HAQ_{lab}']} | R85H:AQ_d {S[f'joint_AQ_{lab}']}")
     print("== BROADER: any damaging COPI × HAQ -> ISG, adjusted ==")
     S['inter_COPImut_all_adj']=ols(f'ifn ~ COPImut*HAQ + C(ancestry_pred){COV}',d,'COPImut:HAQ')
     print("   COPImut:HAQ (ALL adj):",S['inter_COPImut_all_adj'])
