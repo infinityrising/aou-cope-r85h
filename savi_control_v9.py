@@ -40,7 +40,7 @@ try:
         if f[IX['gene_symbol']] not in ('STING1','TMEM173'): continue
         if 'missense' not in f[IX['consequence']]: continue
         aa=f[IX[pcol]] if (pcol and pcol in IX) else ''
-        mm=re.search(r'(\d+)',aa or ''); res=int(mm.group(1)) if mm else None
+        mm=re.search(r'p\.\(?[A-Za-z]{3}(\d+)',aa or ''); res=int(mm.group(1)) if mm else None  # residue #, not the ENSP id
         miss.append((f[IX['vid']],aa,res,fnum(f[IX['gvs_afr_af']])))
     print("   example STING1 missense (vid, aa):", [(v,aa) for (v,aa,r,af) in miss[:5]])
     savi=[v for (v,aa,r,af) in miss if r in SAVI_RES]

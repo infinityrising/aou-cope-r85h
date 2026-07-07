@@ -38,7 +38,7 @@ try:
     domsets={k:cases(v) for k,v in PHENO.items()}; copa=set().union(*domsets.values())
     S['cohortwide_cases']={k:len(v) for k,v in domsets.items()}|{'COPA_any':len(copa)}
     print("   cohort-wide EHR cases:",S['cohortwide_cases'])
-    anc=pd.read_csv(ANC); anc['research_id']=anc.research_id.astype(str)
+    anc=pd.read_csv(ANC,sep="\t"); anc['research_id']=anc.research_id.astype(str)
     d=g.merge(anc[['research_id','ancestry_pred']],on='research_id',how='left')
     d['R85H']=d.research_id.isin(r85h).astype(int); d['AQ']=(d.AQ_d>0).astype(int); d['HAQ']=(d.HAQ_d>0).astype(int)
     d['COPA']=d.research_id.isin(copa).astype(int)
