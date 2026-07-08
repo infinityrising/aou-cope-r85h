@@ -65,6 +65,14 @@ try:
         ppl=bq.query(f"SELECT person_id, DATE_DIFF(DATE '2025-01-01', DATE(birth_datetime), YEAR) age, CAST(sex_at_birth_concept_id AS STRING) sexc FROM `{PROJ}.{DS}.person`").to_dataframe()
         ppl['research_id']=ppl.person_id.astype(str); d=d.merge(ppl[['research_id','age','sexc']],on='research_id',how='left')
     except Exception: pass
+    try:  # smoking (EHR ever-smoker, ICD tobacco) + healthcare utilization (visit count): confounder + ascertainment adjustment
+        smk=set(str(r[0]) for r in bq.query(f"SELECT DISTINCT co.person_id FROM `{PROJ}.{DS}.condition_occurrence` co JOIN `{PROJ}.{DS}.concept` c ON co.condition_source_concept_id=c.concept_id WHERE c.vocabulary_id LIKE 'ICD%' AND (c.concept_code LIKE 'Z72.0%' OR c.concept_code LIKE 'F17%' OR c.concept_code LIKE '305.1%' OR c.concept_code LIKE 'V15.82%')"))
+        d['smoker']=d.research_id.isin(smk).astype(float)
+        util=bq.query(f"SELECT person_id, COUNT(DISTINCT visit_occurrence_id) nv FROM `{PROJ}.{DS}.visit_occurrence` GROUP BY person_id").to_dataframe()
+        util['research_id']=util.person_id.astype(str); util['util_log']=np.log1p(util.nv.astype(float))
+        d=d.merge(util[['research_id','util_log']],on='research_id',how='left'); d['util_log']=d.util_log.fillna(0.0); adj=" + smoker + util_log"
+        print(f"adj: ever-smoker {int(d.smoker.sum())} | util_log on")
+    except Exception: d['smoker']=0.0; d['util_log']=0.0; adj=""
     pc=(" + "+" + ".join(PCS)) if PCS else ""
     import statsmodels.formula.api as smf
     def logit(fm,dd,t):
@@ -74,7 +82,7 @@ try:
     S['incidence']={}
     for ph,cc in {**PHENO,**NEGCTRL_OUT}.items():
         d['Y']=d.research_id.isin(caseset(cc)).astype(int)
-        lof=logit(f'Y ~ IRAK3 + age + C(sexc){pc}',d,'IRAK3'); syn=logit(f'Y ~ IRAK3syn + age + C(sexc){pc}',d,'IRAK3syn') if ph=='fibrotic_ILD' else (None,None)
+        lof=logit(f'Y ~ IRAK3 + age + C(sexc){adj}{pc}',d,'IRAK3'); syn=logit(f'Y ~ IRAK3syn + age + C(sexc){adj}{pc}',d,'IRAK3syn') if ph=='fibrotic_ILD' else (None,None)
         S['incidence'][ph]={'IRAK3_LoF':lof,'IRAK3_syn':syn}
         tag='  <NEG-CTRL' if ph in NEGCTRL_OUT else ''
         print(f"   {ph:18s} IRAK3-LoF OR={lof[0]}(p{lof[1]})"+(f" | synonymous OR={syn[0]}(p{syn[1]})" if syn[0] is not None else "")+tag)
@@ -83,7 +91,7 @@ try:
     for ph,cc in [('fibrotic_ILD',PHENO['fibrotic_ILD']),('bronchiectasis',PHENO['bronchiectasis']),('autoinflammatory',PHENO['autoinflammatory'])]:
         d['Y']=d.research_id.isin(caseset(cc)).astype(int); S['interaction'][ph]={}
         for other in ['AQ','HAQ','R85H']:
-            o,p=logit(f'Y ~ IRAK3*{other} + age + C(sexc){pc}',d,f'IRAK3:{other}')
+            o,p=logit(f'Y ~ IRAK3*{other} + age + C(sexc){adj}{pc}',d,f'IRAK3:{other}')
             nd=int(((d.IRAK3==1)&(d[other]==1)&(d.Y==1)).sum()); S['interaction'][ph][other]={'OR':o,'p':p,'double_cases':nd}
             print(f"   {ph:16s} IRAK3×{other:4s} interaction OR={o}(p{p}) | double-carrier cases={nd}")
     print("\n== READ: IRAK3-LoF protective for fibrotic-ILD but risk for autoinflammatory (dual M1 signature)? flat across neg-ctrl outcomes + synonymous (specificity)? interaction ~0 (convergence, not synergy)? ==")

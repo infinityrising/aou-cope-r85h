@@ -77,18 +77,26 @@ try:
         ppl['research_id']=ppl.person_id.astype(str); d=d.merge(ppl[['research_id','age','sexc']],on='research_id',how='left')
         d['agez']=(d.age-d.age.mean())/d.age.std(); d['sex_m']=(d.sexc.astype(str)==d.sexc.astype(str).mode().iloc[0]).astype(float)
     except Exception: d['agez']=0.0; d['sex_m']=0.0
-    covb=['agez','sex_m']+PCS
+    try:  # smoking (EHR ever-smoker, ICD tobacco) + healthcare utilization (visit count): confounder + ascertainment adjustment
+        smk=anyset(['Z72.0','F17','305.1','V15.82']); d['smoker']=d.research_id.isin(smk).astype(float)
+        util=bq.query(f"SELECT person_id, COUNT(DISTINCT visit_occurrence_id) nv FROM `{PROJ}.{DS}.visit_occurrence` GROUP BY person_id").to_dataframe()
+        util['research_id']=util.person_id.astype(str); util['util_log']=np.log1p(util.nv.astype(float))
+        d=d.merge(util[['research_id','util_log']],on='research_id',how='left'); d['util_log']=d.util_log.fillna(0.0); ADJ=['smoker','util_log']
+        print(f"   adj: ever-smoker {int(d.smoker.sum())} | median visits {float(np.expm1(d.util_log.median())):.0f}")
+    except Exception: d['smoker']=0.0; d['util_log']=0.0; ADJ=[]
+    covb=['agez','sex_m']+ADJ+PCS
     import statsmodels.formula.api as smf
     def logit(fm,dd,t):
         try: r=smf.logit(fm,data=dd,missing='drop').fit(disp=0); return round(float(np.exp(r.params[t])),3),round(float(r.pvalues[t]),4)
         except Exception: return None,None
     pc=(" + "+" + ".join(PCS)) if PCS else ""
+    adj=(" + "+" + ".join(ADJ)) if ADJ else ""
     print("\n== IRAK3-LoF: INCIDENCE (OR) + WITHIN-CASE SEVERITY (Firth) across the panel ==")
     print(f"{'phenotype':18s} {'ncase':>6} {'IRAK3_inc':>14} | {'IRAK3_SEV Firth OR[CI] p':>34}")
     S['panel']=[]
     for ph,cc in PANEL.items():
         cs=caseset(cc); d['Y']=d.research_id.isin(cs).astype(int)
-        inc=logit(f'Y ~ IRAK3 + agez + C(sexc){pc}',d,'IRAK3')
+        inc=logit(f'Y ~ IRAK3 + agez + C(sexc){adj}{pc}',d,'IRAK3')
         sub=d[d.Y==1].copy(); sub['__y']=sub.research_id.isin(hard).astype(float); ncar=int(sub.IRAK3.sum())
         sev=firth_test(sub,'IRAK3',covb) if ncar>=3 else (None,None,None,ncar)
         S['panel'].append({'phenotype':ph,'n_cases':len(cs),'IRAK3_inc_OR':inc[0],'IRAK3_inc_p':inc[1],'IRAK3_case_carr':ncar,'IRAK3_sev_firthOR':sev[0],'IRAK3_sev_CI':sev[1],'IRAK3_sev_p':sev[2]})
@@ -97,7 +105,7 @@ try:
     print("\n== IRAK3-LoF × R85H interaction (incidence): does the double-hit exceed additive? ==")
     for ph,cc in [('bronchiectasis',PANEL['bronchiectasis']),('fibrotic_ILD',PANEL['fibrotic_ILD']),('infl_arthritis',PANEL['infl_arthritis'])]:
         d['Y']=d.research_id.isin(caseset(cc)).astype(int)
-        o,p=logit(f'Y ~ IRAK3*R85H + agez + C(sexc){pc}',d,'IRAK3:R85H')
+        o,p=logit(f'Y ~ IRAK3*R85H + agez + C(sexc){adj}{pc}',d,'IRAK3:R85H')
         ndouble=int(((d.IRAK3==1)&(d.R85H==1)&(d.Y==1)).sum())
         print(f"   {ph:16s} IRAK3:R85H OR={o} p={p} | double-carrier cases={ndouble}")
         S.setdefault('interaction',{})[ph]={'IRAK3xR85H_OR':o,'p':p,'double_cases':ndouble}

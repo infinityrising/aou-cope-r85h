@@ -101,7 +101,15 @@ try:
         ppl['research_id']=ppl.person_id.astype(str); d=d.merge(ppl[['research_id','age','sexc']],on='research_id',how='left')
         d['agez']=(d.age-d.age.mean())/d.age.std(); d['sex_m']=(d.sexc.astype(str)==d.sexc.astype(str).mode().iloc[0]).astype(float)
     except Exception: d['agez']=0.0; d['sex_m']=0.0
-    covb=['agez','sex_m']+PCS; dA=d[d.ancestry_pred=='afr'].copy()
+    try:  # smoking (EHR ever-smoker, ICD tobacco) + healthcare utilization (visit count): confounder + ascertainment adjustment
+        smk=set(str(r[0]) for r in bq.query(f"SELECT DISTINCT co.person_id FROM `{PROJ}.{DS}.condition_occurrence` co JOIN `{PROJ}.{DS}.concept` c ON co.condition_source_concept_id=c.concept_id WHERE c.vocabulary_id LIKE 'ICD%' AND (c.concept_code LIKE 'Z72.0%' OR c.concept_code LIKE 'F17%' OR c.concept_code LIKE '305.1%' OR c.concept_code LIKE 'V15.82%')"))
+        d['smoker']=d.research_id.isin(smk).astype(float)
+        util=bq.query(f"SELECT person_id, COUNT(DISTINCT visit_occurrence_id) nv FROM `{PROJ}.{DS}.visit_occurrence` GROUP BY person_id").to_dataframe()
+        util['research_id']=util.person_id.astype(str); util['util_log']=np.log1p(util.nv.astype(float))
+        d=d.merge(util[['research_id','util_log']],on='research_id',how='left'); d['util_log']=d.util_log.fillna(0.0); ADJ=['smoker','util_log']
+        print(f"adj: ever-smoker {int(d.smoker.sum())} | util_log on")
+    except Exception: d['smoker']=0.0; d['util_log']=0.0; ADJ=[]
+    covb=['agez','sex_m']+ADJ+PCS; dA=d[d.ancestry_pred=='afr'].copy()
     print(f"cohort {len(d)} | AFR {len(dA)} | phenome {len(PHENOME)} phenotypes ({sum(1 for v in PHENOME.values() if v[0]=='NEG')} neg-control)\n")
     # exposures: (name, dataframe, min-carriers). cisAQ tested within-AFR (ancestry-specific); R85H+IRAK3 whole-cohort.
     EXPO=[('R85H',d),('IRAK3',d),('cisAQ',dA)]
