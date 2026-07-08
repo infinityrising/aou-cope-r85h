@@ -8,6 +8,7 @@ ID-space mismatch is visible). Standard app. Ends 'run complete' / 'run failed'.
 """
 import os, io, gzip, subprocess, json
 import numpy as np, pandas as pd
+import warnings; warnings.filterwarnings("ignore"); np.seterr(all="ignore")   # small-cell fit warnings are expected/benign; keep output readable
 MNT=os.path.expanduser("~/workspace/vwb-aou-datasets-controlled-v9")
 OLINK=f"{MNT}/v9/multiomics/proteomics/normalized/Olink_10k_aou_v9_normalized.tsv.gz"
 SNP=f"{MNT}/v9/wgs/short_read/snpindel"; ANC=f"{SNP}/aux/ancestry/ancestry_preds.tsv"; VAT=f"{SNP}/aux/vat/vat_complete.bgz.tsv.gz"

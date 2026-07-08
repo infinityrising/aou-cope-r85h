@@ -10,6 +10,7 @@ Ends 'run complete' / 'run failed'.
 import os, gzip, ast, json
 import numpy as np, pandas as pd
 from scipy.stats import chi2
+import warnings; warnings.filterwarnings("ignore"); np.seterr(all="ignore")   # small-cell fit warnings are expected/benign; keep output readable
 MNT=os.path.expanduser("~/workspace/vwb-aou-datasets-controlled-v9"); SNP=f"{MNT}/v9/wgs/short_read/snpindel"
 ANC=f"{SNP}/aux/ancestry/ancestry_preds.tsv"; VAT=f"{SNP}/aux/vat/vat_complete.bgz.tsv.gz"; PHPAV=os.path.expanduser("~/sting_phenome_pav_v9.csv")
 CDR="wb-silky-artichoke-2408.C2025Q4R6"; PROJ,DS=CDR.split(".",1)
