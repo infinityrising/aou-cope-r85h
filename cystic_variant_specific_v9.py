@@ -24,13 +24,19 @@ R85H_VID='19-18911007-C-T'
 STINGV={'R71H':'5-139481493-C-T','G230A':'5-139478340-C-G','R293Q':'5-139477397-C-T'}
 MINCODES=int(os.environ.get("MINCODES","2")); AFMAX=float(os.environ.get("AFMAX","0.01"))
 # ---- variant-specific GoF exposure sets (position-selected on the pathogenic residues, REVEL-independent) ----
-GOF={
- 'SAVI_STING':{'gene':'STING1','chr':'5','s':139475528,'e':139482935,'res':{147,154,155,158,166,206,281,284}},
- 'COPA_WD40' :{'gene':'COPA', 'chr':'1','s':160288580,'e':160343566,'res':{230,233,236,241,242,243}},
+GOF={  # 'syms' = accepted gene_symbols (STING1 is annotated under legacy TMEM173 in this VAT)
+ 'SAVI_STING':{'syms':{'STING1','TMEM173'},'chr':'5','s':139475528,'e':139482935,'res':{147,154,155,158,166,206,281,284}},
+ 'COPA_WD40' :{'syms':{'COPA'},            'chr':'1','s':160288580,'e':160343566,'res':{230,233,236,241,242,243}},
 }
 # ---- resolved lung phenotypes (CYSTIC = airway/lymphoid remodeling; FIBROTIC = classic ILD comparator) ----
-CYSTIC={'bronchiectasis':['J47','494'],'lung_cyst':['J98.4'],'LAM_PLCH':['J84.81','J84.82'],'LIP':['J84.2']}
+# J98.4 dropped: "other disorders of lung / lung disease NOS" is a non-specific catch-all (8,234 -> diluted cystic to null).
+# bronchiectasis is the mechanistically-exact clean readout: repeated infection -> airway remodeling (the index-patient model).
+CYSTIC={'bronchiectasis':['J47','494'],'LAM_PLCH':['J84.81','J84.82'],'LIP':['J84.2']}
 FIBROTIC={'pulm_fibrosis':['J84.1','515','516.3']}
+# severity markers (>=1 occurrence): resp failure, O2-dependence, Pseudomonas colonization, hemoptysis, pulm-HTN/cor
+# pulmonale, lung transplant. 'severe bronchiectasis' = bronchiectasis + any marker -> tests whether the population
+# signal lives in SEVERITY, not incidence (the OA37-is-the-tail hypothesis; explains binary ORs sitting near 1.0).
+SEVERITY=['J96','518.81','518.83','518.84','Z99.81','V46.2','B96.5','R04.2','786.3','I27','416','Z94.2']
 RESID=re.compile(r'p\.\(?[A-Za-z]{3}(\d+)')
 def fnum(x):
     try: return float(x)
@@ -59,7 +65,7 @@ try:
         vids=[]; low_revel=0
         for line in tbx.fetch('chr'+g['chr'],g['s'],g['e']):
             f=line.split("\t")
-            if f[IX['gene_symbol']]!=g['gene'] or 'missense' not in f[IX['consequence']]: continue
+            if f[IX['gene_symbol']] not in g['syms'] or 'missense' not in f[IX['consequence']]: continue
             if fnum(f[IX['gvs_afr_af']])>=AFMAX: continue
             m=RESID.search(f[IX['aa_change']] if hasaa else '')
             if m and int(m.group(1)) in g['res']:
@@ -88,6 +94,10 @@ try:
     print("== (B) resolved phenotypes ==")
     PH={'CYSTIC':set().union(*[cases(v) for v in CYSTIC.values()]),'FIBROTIC':cases(FIBROTIC['pulm_fibrosis'])}
     for k,v in CYSTIC.items(): PH[k]=cases(v)            # component breakdown (bronchiectasis etc.)
+    def has_any(codes):
+        lk=" OR ".join([f"c.concept_code LIKE '{p}%'" for p in codes])
+        return set(str(r.person_id) for r in bq.query(f"SELECT DISTINCT co.person_id FROM `{PROJ}.{DS}.condition_occurrence` co JOIN `{PROJ}.{DS}.concept` c ON co.condition_source_concept_id=c.concept_id WHERE c.vocabulary_id LIKE 'ICD%' AND ({lk})"))
+    PH['severe_bronchiect']=PH['bronchiectasis'] & has_any(SEVERITY)   # complicated/severe bronchiectasis (the OA37 tail)
     S['pheno_n']={k:len(v) for k,v in PH.items()}
     print("   cases:",S['pheno_n'])
     # ---- cohort + covariates (16 PC + age + sex + smoking) ----
@@ -118,7 +128,7 @@ try:
     grid=[]; EXPO_ORDER=['SAVI_STING','COPA_WD40','IRAK3_LoF','R85H','R85H_x_IRAK3LoF','R85H_x_AQ']
     for ename in EXPO_ORDER:
         d['E']=d.research_id.isin(expo[ename]).astype(int); ncar=int(d.E.sum())
-        for pname in ['CYSTIC','FIBROTIC']:
+        for pname in ['bronchiectasis','severe_bronchiect','CYSTIC','FIBROTIC']:
             d['Y']=d.research_id.isin(PH[pname]).astype(int); nco=int((d.E*d.Y).sum())
             OR,p=logit(f'Y ~ E{covs}',d,'E')
             grid.append({'exposure':ename,'phenotype':pname,'carriers':ncar,'cases_in_carriers':nco,'OR':OR,'p':p,'suppress':nco<20})
@@ -134,11 +144,28 @@ try:
     # ---- the sign-flip readout (the whole point) ----
     print("\n== SIGN-FLIP (same exposure: cystic vs fibrotic) ==")
     for ename in EXPO_ORDER:
-        c=next((x for x in grid if x['exposure']==ename and x['phenotype']=='CYSTIC'),None)
         fb=next((x for x in grid if x['exposure']==ename and x['phenotype']=='FIBROTIC'),None)
-        if c and fb and c['OR'] and fb['OR']:
-            flip='FLIP' if (c['OR']-1)*(fb['OR']-1)<0 else 'same-dir'
-            print(f"   {ename:18s} cystic OR={c['OR']:>6} / fibrotic OR={fb['OR']:>6}  [{flip}]")
+        for cy in ['bronchiectasis','CYSTIC']:
+            c=next((x for x in grid if x['exposure']==ename and x['phenotype']==cy),None)
+            if c and fb and c['OR'] and fb['OR']:
+                flip='FLIP' if (c['OR']-1)*(fb['OR']-1)<0 else 'same-dir'
+                print(f"   {ename:18s} {cy:14s} OR={c['OR']:>6} / fibrotic OR={fb['OR']:>6}  [{flip}]")
+    # ---- SEVERITY: does the signal concentrate in SEVERE bronchiectasis (the OA37 tail)? ----
+    print("\n== SEVERITY GRADIENT: bronchiectasis(all) OR -> SEVERE-bronchiectasis OR (same exposure) ==")
+    for ename in EXPO_ORDER:
+        a=next((x for x in grid if x['exposure']==ename and x['phenotype']=='bronchiectasis'),None)
+        sv=next((x for x in grid if x['exposure']==ename and x['phenotype']=='severe_bronchiect'),None)
+        if a and sv and a['OR'] is not None and sv['OR'] is not None:
+            print(f"   {ename:18s} all OR={a['OR']:>6} (ca={a['cases_in_carriers']:>3})  ->  SEVERE OR={sv['OR']:>6} (ca={sv['cases_in_carriers']:>3})")
+    covl=" + age + C(sexc)" if 'age' in COV else ""
+    print("\n== WITHIN-CASES: among bronchiectasis cases, does exposure -> SEVERE? (purest OA37 test) ==")
+    bc=d[d.research_id.isin(PH['bronchiectasis'])].copy(); bc['SEV']=bc.research_id.isin(PH['severe_bronchiect']).astype(int)
+    S['within_case_severity']=[]
+    for ename in EXPO_ORDER:
+        bc['E']=bc.research_id.isin(expo[ename]).astype(int); n=int(bc.E.sum()); k=int((bc.E*bc.SEV).sum())
+        OR,p=logit(f'SEV ~ E{covl}',bc,'E') if n>=3 else (None,None)
+        S['within_case_severity'].append({'exposure':ename,'case_carriers':n,'severe':k,'OR':OR,'p':(round(p,5) if p is not None else None)})
+        print(f"   {ename:18s} case-carriers={n:>4} severe={k:>3} OR={str(OR):>7} p={str(round(p,5) if p is not None else None):>9}")
     print("\n===== CYSTIC vs FIBROTIC, VARIANT-SPECIFIC (paste back) ====="); print(json.dumps(S,indent=1,default=str)); print("run complete")
 except Exception as e:
     import traceback; print("run failed:",type(e).__name__,str(e)[:300]); print(traceback.format_exc()[-1200:])
