@@ -54,12 +54,14 @@ try:
         q=f"""SELECT DISTINCT co.person_id FROM `{PROJ}.{DS}.condition_occurrence` co JOIN `{PROJ}.{DS}.concept` c ON co.condition_source_concept_id=c.concept_id WHERE c.vocabulary_id LIKE 'ICD%' AND ({lk})"""
         return set(str(r.person_id) for r in bq.query(q))
     caseset={k:cases(v) for k,v in PHE.items()}; S['cohortwide_cases']={k:len(v) for k,v in caseset.items()}
-    print("   cohort-wide cases:",S['cohortwide_cases'])
+    smoke=cases(['F17%','Z72.0%','305.1%','V15.82'])   # ever-smoker proxy (EHR) — the lung-specific confound to rule out
+    S['smokers']=len(smoke); print("   cohort-wide cases:",S['cohortwide_cases'],"| smokers:",len(smoke))
     print("== cohort (WGS w/ ancestry+PCs) + covariates ==")
     anc=pd.read_csv(ANC,sep="\t"); anc['research_id']=anc.research_id.astype(str)
     d=anc[['research_id','ancestry_pred']].copy()
     d['IRAK3']=d.research_id.isin(irak3_dmg).astype(int); d['IRAK3_lof']=d.research_id.isin(irak3_lof).astype(int); d['R85H']=d.research_id.isin(r85h).astype(int)
     for k,s in caseset.items(): d[k]=d.research_id.isin(s).astype(int)
+    d['smoking']=d.research_id.isin(smoke).astype(int)
     COV=[]
     try:
         P=anc['pca_features'].apply(lambda x: ast.literal_eval(x) if isinstance(x,str) else (x if isinstance(x,list) else []))
@@ -78,11 +80,12 @@ try:
             r=smf.logit(f,data=dd,missing='drop').fit(disp=0)
             return {'OR':round(float(np.exp(r.params[term])),3),'p':round(float(r.pvalues[term]),5),'n':int(r.nobs)}
         except Exception as e: return {'error':str(e)[:70]}
-    print("== IRAK3 -> phenotypes (PC+age+sex adj). asthma=positive control; ILD/cystic=NOVEL ==")
+    print("== IRAK3 -> phenotypes (PC+age+sex adj, then +SMOKING). asthma=positive control; ILD/cystic=NOVEL ==")
     for ph in ['asthma','ILD','cystic_ILD','infl_arthritis','vasculitis']:
         ncar=int(d.IRAK3.sum()); ncc=int((d.IRAK3*d[ph]).sum())
         S[f'{ph}_IRAK3']=logit(f'{ph} ~ IRAK3{covs}',d,'IRAK3'); S[f'{ph}_IRAK3lof']=logit(f'{ph} ~ IRAK3_lof{covs}',d,'IRAK3_lof')
-        print(f"   {ph}: IRAK3-dmg carriers {ncar} cases {ncc} ({100*ncc/max(ncar,1):.1f}%) -> {S[f'{ph}_IRAK3']} | LoF-only {S[f'{ph}_IRAK3lof']}")
+        S[f'{ph}_IRAK3_smk']=logit(f'{ph} ~ IRAK3{covs} + smoking',d,'IRAK3')   # smoking-adjusted (does the lung signal survive?)
+        print(f"   {ph}: carriers {ncar} cases {ncc} ({100*ncc/max(ncar,1):.1f}%) -> dmg {S[f'{ph}_IRAK3']} | +smk {S[f'{ph}_IRAK3_smk']} | LoF {S[f'{ph}_IRAK3lof']}")
     print("== R85H × IRAK3 -> lung disease (two-hit; report double-carrier counts) ==")
     for ph in ['cystic_ILD','ILD']:
         dd=d.copy(); dd['inter']=dd.R85H*dd.IRAK3
