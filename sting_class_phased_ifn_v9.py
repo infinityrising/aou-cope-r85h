@@ -79,6 +79,10 @@ try:
         cf=pd.read_csv(CELL); cf['research_id']=cf.research_id.astype(str); cc=[c for c in cf.columns if c!='research_id']
         d=d.merge(cf,on='research_id',how='left'); COV+=cc
     except Exception: print("   (cell_fractions_v9.csv not found)")
+    try:  # smoking (EHR ever-smoker, ICD tobacco): whole-blood ISG/inflammatory expression confounder -- parity with EMR + RNA models
+        smk=set(str(r[0]) for r in bq.query(f"SELECT DISTINCT co.person_id FROM `{PROJ}.{DS}.condition_occurrence` co JOIN `{PROJ}.{DS}.concept` c ON co.condition_source_concept_id=c.concept_id WHERE c.vocabulary_id LIKE 'ICD%' AND (c.concept_code LIKE 'Z72.0%' OR c.concept_code LIKE 'F17%' OR c.concept_code LIKE '305.1%' OR c.concept_code LIKE 'V15.82%')"))
+        d['smoker']=d.research_id.isin(smk).astype(float); COV+=['smoker']; print(f"   adj: ever-smoker {int(d.smoker.sum())} added (smoking parity)")
+    except Exception: pass
     covs=(" + "+" + ".join(COV)) if COV else ""
     import statsmodels.formula.api as smf
     def fit(fm,terms):

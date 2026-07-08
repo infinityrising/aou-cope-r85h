@@ -98,6 +98,10 @@ try:
             ppl=bq.query(f"SELECT person_id, DATE_DIFF(DATE '2025-01-01', DATE(birth_datetime), YEAR) age, CAST(sex_at_birth_concept_id AS STRING) sexc FROM `{PROJ}.{DS}.person`").to_dataframe()
             ppl['research_id']=ppl.person_id.astype(str); d=d.merge(ppl[['research_id','age','sexc']],on='research_id',how='left'); COV+=['age','C(sexc)']
         except Exception: pass
+        try:  # smoking (EHR ever-smoker, ICD tobacco): plasma inflammatory-protein confounder -- parity with EMR + RNA models
+            smk=set(str(r[0]) for r in bq.query(f"SELECT DISTINCT co.person_id FROM `{PROJ}.{DS}.condition_occurrence` co JOIN `{PROJ}.{DS}.concept` c ON co.condition_source_concept_id=c.concept_id WHERE c.vocabulary_id LIKE 'ICD%' AND (c.concept_code LIKE 'Z72.0%' OR c.concept_code LIKE 'F17%' OR c.concept_code LIKE '305.1%' OR c.concept_code LIKE 'V15.82%')"))
+            d['smoker']=d.research_id.isin(smk).astype(float); COV+=['smoker']; print(f"   adj: ever-smoker {int(d.smoker.sum())} added (smoking parity)")
+        except Exception: pass
         covs=(" + "+" + ".join(COV)) if COV else ""
         import statsmodels.formula.api as smf
         def ols(y,ex):
@@ -105,7 +109,7 @@ try:
             try: r=smf.ols(f'{y} ~ {ex}{covs}',data=sub,missing='drop').fit(); return round(float(r.params[ex]),3),round(float(r.pvalues[ex]),4),int(sub[ex].sum())
             except Exception: return None,None,int(sub[ex].sum())
         outc=['IFN_prot','inflam_prot']+[c for c in TARGETS if c in d.columns]
-        print("\n== plasma protein ~ exposure (beta(p)) -- 16PC + age + sex adjusted ==")
+        print("\n== plasma protein ~ exposure (beta(p)) -- 16PC + age + sex + smoking adjusted ==")
         print(f"{'exposure':12s} "+" ".join(f"{o:>13s}" for o in outc))
         S['results']={}
         for ex in ['R85H','IRAK3_LoF','AQ','HAQ','R85H_x_AQ','R85H_x_HAQ']:
