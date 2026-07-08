@@ -82,9 +82,9 @@ try:
         for line in tbx.fetch('chr12',66183995,66259622):
             f=line.split("\t")
             if f[IX['gene_symbol']]=='IRAK3' and f[IX['LoF']]=='HC' and fnum(f[IX['gvs_afr_af']])<0.001: irak3.append(f[IX['vid']])
-        C_r85h=carr([R85H_VID]); C_irak3=carr(irak3); st={k:carr([v]) for k,v in STINGV.items()}; C_aq=(st['G230A']&st['R293Q'])-st['R71H']
-        d['R85H']=d.research_id.isin(C_r85h).astype(int); d['IRAK3_LoF']=d.research_id.isin(C_irak3).astype(int); d['AQ']=d.research_id.isin(C_aq).astype(int); d['R85H_x_AQ']=(d.R85H&d.AQ).astype(int)
-        print(f"Olink carriers: R85H {int(d.R85H.sum())} | IRAK3-LoF {int(d.IRAK3_LoF.sum())} | AQ {int(d.AQ.sum())} | R85H&AQ {int(d.R85H_x_AQ.sum())}")
+        C_r85h=carr([R85H_VID]); C_irak3=carr(irak3); st={k:carr([v]) for k,v in STINGV.items()}; C_aq=(st['G230A']&st['R293Q'])-st['R71H']; C_haq=st['R71H']&st['G230A']&st['R293Q']
+        d['R85H']=d.research_id.isin(C_r85h).astype(int); d['IRAK3_LoF']=d.research_id.isin(C_irak3).astype(int); d['AQ']=d.research_id.isin(C_aq).astype(int); d['HAQ']=d.research_id.isin(C_haq).astype(int); d['R85H_x_AQ']=(d.R85H&d.AQ).astype(int); d['R85H_x_HAQ']=(d.R85H&d.HAQ).astype(int)
+        print(f"Olink carriers: R85H {int(d.R85H.sum())} | IRAK3-LoF {int(d.IRAK3_LoF.sum())} | AQ {int(d.AQ.sum())} | HAQ {int(d.HAQ.sum())} | R85H&AQ {int(d.R85H_x_AQ.sum())} | R85H&HAQ {int(d.R85H_x_HAQ.sum())}")
         if int(d.R85H.sum())==0: print("   ** 0 R85H carriers in Olink -> SampleID likely != person_id; check proteomics/manifest.tsv for the ID bridge **")
         anc=pd.read_csv(ANC,sep="\t"); anc['research_id']=anc.research_id.astype(str); COV=[]
         try:
@@ -108,7 +108,7 @@ try:
         print("\n== plasma protein ~ exposure (beta(p)) -- 16PC + age + sex adjusted ==")
         print(f"{'exposure':12s} "+" ".join(f"{o:>13s}" for o in outc))
         S['results']={}
-        for ex in ['R85H','IRAK3_LoF','AQ','R85H_x_AQ']:
+        for ex in ['R85H','IRAK3_LoF','AQ','HAQ','R85H_x_AQ','R85H_x_HAQ']:
             row=[]; S['results'][ex]={}
             for o in outc:
                 b,p,nc=ols(o,ex); S['results'][ex][o]={'beta':b,'p':p,'n_carr':nc}; row.append(f"{b}({p})")
