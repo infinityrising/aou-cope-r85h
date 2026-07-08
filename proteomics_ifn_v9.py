@@ -10,7 +10,9 @@ import os, io, gzip, subprocess, json
 import numpy as np, pandas as pd
 import warnings; warnings.filterwarnings("ignore"); np.seterr(all="ignore")   # small-cell fit warnings are expected/benign; keep output readable
 MNT=os.path.expanduser("~/workspace/vwb-aou-datasets-controlled-v9")
-OLINK=f"{MNT}/v9/multiomics/proteomics/normalized/Olink_10k_aou_v9_normalized.tsv.gz"
+import glob as _glob
+_ON="Olink_10k_aou_v9_normalized.tsv.gz"; _cand=[f"{MNT}/v9/multiomics/proteomics/npx/batch_normalized/{_ON}", f"{MNT}/v9/multiomics/proteomics/normalized/{_ON}"]
+OLINK=next((p for p in _cand if os.path.exists(p)), None) or (_glob.glob(f"{MNT}/v9/multiomics/proteomics/**/{_ON}",recursive=True) or [_cand[0]])[0]  # self-locating: subdir was renamed normalized/ -> npx/batch_normalized/
 SNP=f"{MNT}/v9/wgs/short_read/snpindel"; ANC=f"{SNP}/aux/ancestry/ancestry_preds.tsv"; VAT=f"{SNP}/aux/vat/vat_complete.bgz.tsv.gz"
 CDR="wb-silky-artichoke-2408.C2025Q4R6"; PROJ,DS=CDR.split(".",1)
 R85H_VID='19-18911007-C-T'; STINGV={'R71H':'5-139481493-C-T','G230A':'5-139478340-C-G','R293Q':'5-139477397-C-T'}
@@ -24,7 +26,7 @@ def fnum(x):
 S={}
 try:
     hdr=sh(f'zcat "{OLINK}" 2>/dev/null | head -1').rstrip("\n"); cols=hdr.split("\t")
-    print("Olink header cols:",cols[:20])
+    print("OLINK path:",OLINK); print("Olink header cols:",cols[:20])
     low=[c.lower() for c in cols]
     def findcol(cands):
         for i,c in enumerate(low):
