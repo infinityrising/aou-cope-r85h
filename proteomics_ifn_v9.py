@@ -45,6 +45,22 @@ try:
         m=m[m.__a.isin(TARGETS)].dropna(subset=['__npx'])
         print("target proteins found:",sorted(m.__a.unique()))
         w=m.pivot_table(index='__s',columns='__a',values='__npx',aggfunc='mean'); w.index=w.index.astype(str)
+        # ---- BRIDGE Olink SampleID -> person_id via the proteomics manifest (SampleID is a plate barcode, not person_id) ----
+        MANIFEST=f"{MNT}/v9/multiomics/proteomics/manifest.tsv"
+        try:
+            man=pd.read_csv(MANIFEST,sep="\t",dtype=str); print("manifest cols:",list(man.columns))
+            pidcol=next((c for c in man.columns if c.lower() in ('person_id','research_id','participant_id','pid')),None)
+            ols=set(w.index); sidcol=None; best=0
+            for c in man.columns:
+                ov=len(set(man[c].dropna().astype(str))&ols)
+                if ov>best: best=ov; sidcol=c
+            print(f"   manifest bridge: SampleID col='{sidcol}' overlap {best}/{len(ols)} -> person col='{pidcol}'")
+            if sidcol and pidcol and best>0:
+                bridge=dict(zip(man[sidcol].astype(str),man[pidcol].astype(str)))
+                w=w.rename(index=lambda s: bridge.get(str(s))); w=w[w.index.notna()]
+                w=w.groupby(level=0).mean(numeric_only=True); print(f"   mapped to {len(w)} persons")
+            else: print("   ** no manifest bridge column matched Olink SampleIDs -> inspect manifest cols above **")
+        except Exception as ee: print("   manifest bridge failed:",str(ee)[:120])
         def zc(df,cc):
             cc=[c for c in cc if c in df.columns]
             if not cc: return None
@@ -52,7 +68,7 @@ try:
         d=pd.DataFrame(index=w.index); d['IFN_prot']=zc(w,IFN_PROT); d['inflam_prot']=zc(w,INFLAM_PROT)
         for c in TARGETS:
             if c in w.columns: d[c]=(w[c]-w[c].mean())/w[c].std()
-        d['research_id']=d.index.astype(str); print(f"Olink samples with target proteins: {len(d)}")
+        d['research_id']=d.index.astype(str); print(f"Olink persons with target proteins: {len(d)}")
         from google.cloud import bigquery
         bq=bigquery.Client(); T=f"`{PROJ}.{DS}.cb_variant_to_person`"
         def carr(vids):
