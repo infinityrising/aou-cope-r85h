@@ -23,7 +23,7 @@ NEUTRAL=('synonymous','intron','intergenic','non_coding','upstream','downstream'
 NONNEUTRAL=('missense','stop','frameshift','splice','start_lost','stop_lost','inframe')
 WINDOWS=[('1',60000000,65000000),('2',60000000,65000000),('3',70000000,75000000),('4',60000000,65000000),('5',60000000,65000000),('7',60000000,65000000),('8',60000000,65000000),('9',80000000,85000000),('10',60000000,65000000),('11',70000000,75000000),('13',50000000,55000000),('18',30000000,35000000),('20',30000000,35000000)]
 EXCLUDE_GENES={'COPA','COPB1','COPB2','COPG1','COPG2','COPZ1','COPZ2','COPE','ARCN1','STING1','TMEM173','IRAK1','IRAK3','IRAK4','MYD88'}
-PER_WINDOW=int(os.environ.get("PER_WINDOW","3")); MINCODES=int(os.environ.get("MINCODES","2"))
+PER_WINDOW=int(os.environ.get("PER_WINDOW","5")); MINCODES=int(os.environ.get("MINCODES","2"))  # dedup+5/window -> ~50 unique controls
 def fnum(x):
     try: return float(x)
     except (TypeError,ValueError): return 0.0
@@ -52,20 +52,21 @@ try:
     with gzip.open(VAT,'rt') as fh: COLS=fh.readline().rstrip("\n").split("\t")
     has_eur='gvs_eur_af' in COLS
     IX={c:COLS.index(c) for c in (['vid','gene_symbol','consequence','gvs_afr_af']+(['gvs_eur_af'] if has_eur else []))}
-    tbx=pysam.TabixFile(VAT); ctrl=[]
+    tbx=pysam.TabixFile(VAT); ctrl=[]; seen=set()
     for (ch,s,e) in WINDOWS:
         found=0
         try: it=tbx.fetch('chr'+ch,s,e)
         except Exception: continue
         for line in it:
-            f=line.split("\t"); cons=f[IX['consequence']]
+            f=line.split("\t"); cons=f[IX['consequence']]; vid=f[IX['vid']]
+            if vid in seen: continue                                   # dedup multi-transcript rows of the same variant
             if any(x in cons for x in NONNEUTRAL): continue
             if not any(x in cons for x in NEUTRAL): continue
             if f[IX['gene_symbol']] in EXCLUDE_GENES: continue
             af=fnum(f[IX['gvs_afr_af']])
             if not (AFR_LO<=af<=AFR_HI): continue
             if has_eur and fnum(f[IX['gvs_eur_af']])>EUR_MAX: continue
-            ctrl.append(f[IX['vid']]); found+=1
+            seen.add(vid); ctrl.append(vid); found+=1
             if found>=PER_WINDOW: break
     print(f"AFR-AF-matched neutral negative-control variants sampled: {len(ctrl)} (target ~{PER_WINDOW*len(WINDOWS)}; eur-filter={has_eur})")
     S['n_controls_sampled']=len(ctrl)
