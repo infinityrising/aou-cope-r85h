@@ -24,7 +24,12 @@ EUR_MAX=0.05
 NEUTRAL=('synonymous','intron','intergenic','non_coding','upstream','downstream','5_prime_utr','3_prime_utr','5_prime_UTR','3_prime_UTR')
 NONNEUTRAL=('missense','stop','frameshift','splice','start_lost','stop_lost','inframe')
 WINDOWS=[('1',60000000,66000000),('2',60000000,66000000),('3',70000000,76000000),('4',60000000,66000000),('5',40000000,46000000),('6',60000000,66000000),('7',62000000,68000000),('8',60000000,66000000),('9',80000000,86000000),('10',60000000,66000000),('11',70000000,76000000),('12',40000000,46000000),('13',50000000,56000000),('14',50000000,56000000),('15',60000000,66000000),('16',50000000,56000000),('17',40000000,46000000),('18',30000000,36000000),('19',40000000,46000000),('20',30000000,36000000),('21',30000000,36000000),('22',30000000,36000000)]
-EXCLUDE={'COPA','COPB1','COPB2','COPG1','COPG2','COPZ1','COPZ2','COPE','ARCN1','STING1','TMEM173','IRAK1','IRAK3','IRAK4','MYD88','IFIH1','DDX58','TBK1','IRF3','IRF7'}
+EXCLUDE={'COPA','COPB1','COPB2','COPG1','COPG2','COPZ1','COPZ2','COPE','ARCN1','STING1','TMEM173','IRAK1','IRAK2','IRAK3','IRAK4','MYD88','IFIH1','DDX58','TBK1','IRF3','IRF7','RORC','RORA','HAX1','CAMP','LCN2','LTF','ZBP1','CGAS','MB21D1','TREX1','SAMHD1','ADAR','SP100','SP110','SP140','NMI','C1QA','C1QB','C1QC','C1R','C1S','C2','C3','C4A','C4B','C5','C6','C7','C8A','C8B','C9','CFB','CFH','CFI','CFD','SERPING1'}
+IMMUNE_PREFIX=('IFI','IFIT','OAS','MX','GBP','RSAD','USP18','HERC','DDX58','IFIH','ISG','PGLYRP','S100A','S100B','DEFA','DEFB','CXCL','CXCR','CCL','CCR','XCL','CX3C','TNFAIP','TNFSF','TNFRSF','TLR','NLRP','NLRC','NAIP','NOD1','NOD2','CARD','AIM2','IRF','STAT','SOCS','JAK','TRIM','SIGLEC','LY6','BST2','FCGR','FCER','FCRL','HLA','TAP','PSMB8','PSMB9','MASP','FCN','CLEC4','CLEC7','TREM','SLAMF','KLR','KIR','NCR','CTLA','PDCD1','LAG3','HAVCR','TIGIT','LTB','LTA')
+def is_immune(g):
+    if g in EXCLUDE: return True
+    if g[:2]=='IL' and len(g)>2 and g[2].isdigit(): return True   # interleukins (not ILK/ILDR)
+    return any(g.startswith(p) for p in IMMUNE_PREFIX)
 NTARGET=45; RNA_RARE=(8,250); RNA_COMMON=(200,3000); MIN_DOUBLE=3   # widened: more windows + higher target + higher common-carrier floor -> ~30+ pairs above the >=3-double threshold for a tighter empirical p
 def sh(c): return subprocess.run(['bash','-lc',c],capture_output=True,text=True).stdout
 def fnum(x):
@@ -98,7 +103,7 @@ try:
         for line in it:
             f=line.split("\t"); cons=f[IX['consequence']]; vid=f[IX['vid']]
             if vid in seen or any(x in cons for x in NONNEUTRAL) or not any(x in cons for x in NEUTRAL): continue
-            if f[IX['gene_symbol']] in EXCLUDE: continue
+            if is_immune(f[IX['gene_symbol']]): continue
             af=fnum(f[IX['gvs_afr_af']])
             if has_eur and fnum(f[IX['gvs_eur_af']])>EUR_MAX: continue
             if RARE_LO<=af<=RARE_HI and rn<6: seen.add(vid); rare_cand.append(vid); rn+=1
