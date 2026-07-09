@@ -20,8 +20,14 @@ IRAK3=('12',66183995,66259622)
 AFMAX=0.001                        # rare (matches IRAK3-LoF selection)
 # broad windows to harvest genes carrying rare LoF-HC variants (avoid the IFN/immune/COPI loci via EXCLUDE)
 WINDOWS=[('1',150000000,155000000),('2',85000000,90000000),('3',50000000,55000000),('4',80000000,85000000),('5',50000000,55000000),('6',40000000,45000000),('7',80000000,85000000),('8',70000000,75000000),('9',90000000,95000000),('10',70000000,75000000),('11',65000000,70000000),('12',50000000,55000000),('14',60000000,65000000),('15',65000000,70000000),('16',60000000,65000000),('17',45000000,50000000),('19',45000000,50000000),('20',35000000,40000000)]  # ~5Mb each + outer break -> bounded scan
-EXCLUDE={'COPA','COPB1','COPB2','COPG1','COPG2','COPZ1','COPZ2','COPE','ARCN1','STING1','TMEM173','IRAK1','IRAK2','IRAK3','IRAK4','MYD88','IFIH1','DDX58','TBK1','IRF3','IRF7','TLR7','TLR9','TICAM1','TRAF3','TRAF6'}
-NTARGET=25; RNA_CARR=(8,180); MIN_LOF_VIDS=2   # match IRAK3-LoF RNA-carrier count; >=2 LoF variants per gene (a real burden)
+EXCLUDE={'COPA','COPB1','COPB2','COPG1','COPG2','COPZ1','COPZ2','COPE','ARCN1','STING1','TMEM173','IRAK1','IRAK2','IRAK3','IRAK4','MYD88','IFIH1','DDX58','TBK1','IRF3','IRF7','TLR7','TLR9','TICAM1','TRAF3','TRAF6','RORC','RORA','HAX1','CAMP','LCN2','LTF','ZBP1','CGAS','MB21D1','TREX1','SAMHD1','ADAR','SP100','SP110','SP140','NMI','C1QA','C1QB','C1QC','C1R','C1S','C2','C3','C4A','C4B','C5','C6','C7','C8A','C8B','C9','CFB','CFH','CFI','CFD','SERPING1'}
+# CLEANED null: exclude ANY immune/inflammation/antimicrobial/ISG gene (run-074 band was contaminated by PGLYRP/RORC/HAX1/S100)
+IMMUNE_PREFIX=('IFI','IFIT','OAS','MX','GBP','RSAD','USP18','HERC','DDX58','IFIH','ISG','PGLYRP','S100A','S100B','DEFA','DEFB','CXCL','CXCR','CCL','CCR','XCL','CX3C','TNFAIP','TNFSF','TNFRSF','TLR','NLRP','NLRC','NAIP','NOD1','NOD2','CARD','AIM2','IRF','STAT','SOCS','JAK','TRIM','SIGLEC','LY6','BST2','FCGR','FCER','FCRL','HLA','TAP','PSMB8','PSMB9','MASP','FCN','CLEC4','CLEC7','TREM','SLAMF','KLR','KIR','NCR','CTLA','PDCD1','LAG3','HAVCR','TIGIT','LTB','LTA')
+def is_immune(g):
+    if g in EXCLUDE: return True
+    if g[:2]=='IL' and len(g)>2 and g[2].isdigit(): return True   # interleukins (not ILK/ILDR/ILVBL)
+    return any(g.startswith(p) for p in IMMUNE_PREFIX)
+NTARGET=40; RNA_CARR=(20,150); MIN_LOF_VIDS=2   # tighter carrier match to IRAK3(35) -> less-noisy burden betas; more genes for a stable percentile
 def sh(c): return subprocess.run(['bash','-lc',c],capture_output=True,text=True).stdout
 def fnum(x):
     try: return float(x)
@@ -59,7 +65,7 @@ try:
         except Exception: continue
         for line in it:
             f=line.split("\t"); g=f[IX['gene_symbol']]
-            if g in EXCLUDE or g=='' or f[IX['LoF']]!='HC' or fnum(f[IX['gvs_afr_af']])>=AFMAX: continue
+            if g=='' or is_immune(g) or f[IX['LoF']]!='HC' or fnum(f[IX['gvs_afr_af']])>=AFMAX: continue
             genevids.setdefault(g,set()).add(f[IX['vid']])
         if sum(1 for vs in genevids.values() if len(vs)>=MIN_LOF_VIDS)>=NTARGET*2: break   # enough candidate genes -> stop scanning windows
     genes=[g for g,vs in genevids.items() if len(vs)>=MIN_LOF_VIDS]
