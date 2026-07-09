@@ -88,8 +88,8 @@ try:
     d['R85H']=d.research_id.isin(C_r85h).astype(float); d['IRAK3']=d.research_id.isin(C_irak3).astype(float)
     try:
         pav=pd.read_csv(PHPAV); pav['research_id']=pav.research_id.astype(str)
-        d=d.merge(pav[['research_id','AQ_d']],on='research_id',how='left'); d['cisAQ']=(d.AQ_d.fillna(0)>=1).astype(float)
-    except Exception: d['cisAQ']=np.nan
+        d=d.merge(pav[['research_id','AQ_d','HAQ_d']],on='research_id',how='left'); d['cisAQ']=(d.AQ_d.fillna(0)>=1).astype(float); d['cisHAQ']=(d.HAQ_d.fillna(0)>=1).astype(float)
+    except Exception: d['cisAQ']=np.nan; d['cisHAQ']=np.nan
     PCS=[]
     try:
         P=anc['pca_features'].apply(lambda x: ast.literal_eval(x) if isinstance(x,str) else (x if isinstance(x,list) else []))
@@ -112,10 +112,10 @@ try:
     except Exception: d['smoker']=0.0; d['util_log']=0.0; ADJ=[]
     covb=['agez','sex_m']+ADJ+PCS; dA=d[d.ancestry_pred=='afr'].copy()
     print(f"cohort {len(d)} | AFR {len(dA)} | phenome {len(PHENOME)} phenotypes ({sum(1 for v in PHENOME.values() if v[0]=='NEG')} neg-control)\n")
-    # exposures: (name, dataframe, min-carriers). cisAQ tested within-AFR (ancestry-specific); R85H+IRAK3 whole-cohort.
-    EXPO=[('R85H',d),('IRAK3',d),('cisAQ',dA)]
+    # exposures: (name, dataframe). cisAQ + cisHAQ(STING-dampened NEGATIVE CONTROL) tested within-AFR; R85H+IRAK3 whole-cohort.
+    EXPO=[('R85H',d),('IRAK3',d),('cisAQ',dA),('cisHAQ',dA)]
     rows={e[0]:[] for e in EXPO}
-    print(f"{'phenotype':22s} {'sys':8s} {'ncase':>6}  {'R85H OR(p)':>16} {'IRAK3 OR(p)':>16} {'cisAQ|AFR OR(p)':>18}")
+    print(f"{'phenotype':22s} {'sys':8s} {'ncase':>6}  {'R85H OR(p)':>16} {'IRAK3 OR(p)':>16} {'cisAQ|AFR OR(p)':>18} {'cisHAQ|AFR[negctrl]':>19}")
     for ph,(sysv,cc) in PHENOME.items():
         cs=caseset(cc); ncase=len(cs); disp={}
         for ename,dd in EXPO:
@@ -123,7 +123,7 @@ try:
             orr,pp,ncar=firth_or(dd,ename,covb)
             rows[ename].append({'phenotype':ph,'system':sysv,'n_case':ncase,'OR':orr,'p':pp,'n_carrier_case':int(((dd[ename]==1)&(dd['__y']==1)).sum())})
             disp[ename]=f"{orr}(p{pp})" if orr is not None else "na"
-        print(f"{ph:22s} {sysv:8s} {ncase:>6}  {disp['R85H']:>16} {disp['IRAK3']:>16} {disp['cisAQ']:>18}")
+        print(f"{ph:22s} {sysv:8s} {ncase:>6}  {disp['R85H']:>16} {disp['IRAK3']:>16} {disp['cisAQ']:>18} {disp['cisHAQ']:>19}")
     print("\n== FDR (Benjamini-Hochberg, per exposure across the phenome) -- hits q<0.10 (excl neg-controls from discovery emphasis) ==")
     S['hits']={}
     for ename,_ in EXPO:

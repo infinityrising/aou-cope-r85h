@@ -81,9 +81,10 @@ try:
         if f[IX['gene_symbol']]=='IRAK3' and f[IX['LoF']]=='HC' and fnum(f[IX['gvs_afr_af']])<0.001: irak3.append(f[IX['vid']])
     C_irak3=carr(irak3); C_r85h=carr([R85H_VID]); stcar={k:carr([v]) for k,v in STINGV.items()}
     C_aq=(stcar['G230A']&stcar['R293Q'])-stcar['R71H']                 # AQ pattern (unphased proxy; cis needs long-read)
+    C_haq=(stcar['R71H']&stcar['G230A']&stcar['R293Q'])               # HAQ = STING-dampened NEGATIVE CONTROL, parallel to AQ
     expo['IRAK3_LoF']=C_irak3; expo['R85H']=C_r85h
-    expo['R85H_x_IRAK3LoF']=C_r85h&C_irak3; expo['R85H_x_AQ']=C_r85h&C_aq
-    print(f"   IRAK3-LoF {len(C_irak3)} | R85H {len(C_r85h)} | R85H&IRAK3LoF {len(expo['R85H_x_IRAK3LoF'])} | R85H&AQ {len(expo['R85H_x_AQ'])}")
+    expo['R85H_x_IRAK3LoF']=C_r85h&C_irak3; expo['R85H_x_AQ']=C_r85h&C_aq; expo['AQ']=C_aq; expo['HAQ']=C_haq; expo['R85H_x_HAQ']=C_r85h&C_haq
+    print(f"   IRAK3-LoF {len(C_irak3)} | R85H {len(C_r85h)} | AQ {len(C_aq)} | HAQ {len(C_haq)} | R85H&AQ {len(expo['R85H_x_AQ'])} | R85H&HAQ {len(expo['R85H_x_HAQ'])}")
     # ---- (B) resolved phenotype case sets (>=MINCODES occurrences = chronic/established) ----
     def cases(codes):
         lk=" OR ".join([f"c.concept_code LIKE '{p}%'" for p in codes])
@@ -125,7 +126,7 @@ try:
         try: r=smf.logit(fm,data=dd,missing='drop').fit(disp=0); return round(float(np.exp(r.params[t])),3),float(r.pvalues[t])
         except Exception: return None,None
     # ---- grid: each exposure x {CYSTIC, FIBROTIC} ----
-    grid=[]; EXPO_ORDER=['SAVI_STING','COPA_WD40','IRAK3_LoF','R85H','R85H_x_IRAK3LoF','R85H_x_AQ']
+    grid=[]; EXPO_ORDER=['SAVI_STING','COPA_WD40','IRAK3_LoF','R85H','R85H_x_IRAK3LoF','AQ','HAQ','R85H_x_AQ','R85H_x_HAQ']
     for ename in EXPO_ORDER:
         d['E']=d.research_id.isin(expo[ename]).astype(int); ncar=int(d.E.sum())
         for pname in ['bronchiectasis','severe_bronchiect','CYSTIC','FIBROTIC']:

@@ -28,11 +28,11 @@ try:
         for v in vids:
             out|=set(str(r.pid) for r in bq.query(f"SELECT DISTINCT e.element pid FROM {T}, UNNEST(person_ids.list) e WHERE vid='{v}'"))
         return out
-    st={k:carr([v]) for k,v in STINGV.items()}; C_aq=(st['G230A']&st['R293Q'])-st['R71H']
+    st={k:carr([v]) for k,v in STINGV.items()}; C_aq=(st['G230A']&st['R293Q'])-st['R71H']; C_haq=st['R71H']&st['G230A']&st['R293Q']
     fib=caseset(FIBROTIC); sysd=caseset(SYSTEMIC)
-    print(f"fibrotic-ILD cases {len(fib)} | systemic cases {len(sysd)} | AQ(unphased) {len(C_aq)}")
+    print(f"fibrotic-ILD cases {len(fib)} | systemic cases {len(sysd)} | AQ(unphased) {len(C_aq)} | HAQ(unphased) {len(C_haq)}")
     anc=pd.read_csv(ANC,sep="\t"); anc['research_id']=anc.research_id.astype(str)
-    d=anc[['research_id','ancestry_pred']].copy(); d['AQ']=d.research_id.isin(C_aq).astype(int)
+    d=anc[['research_id','ancestry_pred']].copy(); d['AQ']=d.research_id.isin(C_aq).astype(int); d['HAQ']=d.research_id.isin(C_haq).astype(int)
     d['fib']=d.research_id.isin(fib).astype(int); d['sys']=d.research_id.isin(sysd).astype(int)
     try:
         P=anc['pca_features'].apply(lambda x: ast.literal_eval(x) if isinstance(x,str) else (x if isinstance(x,list) else []))
@@ -50,12 +50,13 @@ try:
         try: r=smf.logit(fm,data=dd,missing='drop').fit(disp=0); return round(float(np.exp(r.params[t])),3),round(float(r.pvalues[t]),4),int(dd[t].sum())
         except Exception: return None,None,int(dd[t].sum())
     afr=d[d.ancestry_pred=='afr']
-    print("\n== UNPHASED AQ -> endpoint ==")
+    print("\n== UNPHASED AQ vs HAQ(negative control) -> endpoint ==")
     S['unphased']={}
     for ep in ['fib','sys']:
         wc=logit(f'{ep} ~ AQ + age + C(sexc){pc16}',d,'AQ'); wa=logit(f'{ep} ~ AQ + age + C(sexc){pc5}',afr,'AQ')
-        S['unphased'][ep]={'whole_cohort_16PC':wc,'within_AFR':wa}
-        print(f"   {ep}: whole-cohort OR={wc[0]} p={wc[1]} (nAQ={wc[2]}) | WITHIN-AFR OR={wa[0]} p={wa[1]} (nAQ={wa[2]})")
+        hwc=logit(f'{ep} ~ HAQ + age + C(sexc){pc16}',d,'HAQ'); hwa=logit(f'{ep} ~ HAQ + age + C(sexc){pc5}',afr,'HAQ')
+        S['unphased'][ep]={'AQ_whole':wc,'AQ_afr':wa,'HAQ_whole':hwc,'HAQ_afr':hwa}
+        print(f"   {ep}: AQ whole OR={wc[0]}(p{wc[1]}) AFR OR={wa[0]}(p{wa[1]}) | HAQ[neg-ctrl] whole OR={hwc[0]}(p{hwc[1]}) AFR OR={hwa[0]}(p{hwa[1]})")
     # ---- cis-phased AQ_d on PAV ----
     print("\n== CIS-PHASED AQ_d -> endpoint (PAV cohort) ==")
     try:
@@ -65,8 +66,9 @@ try:
         S['phased']={}
         for ep in ['fib','sys']:
             ph=logit(f'{ep} ~ AQ_d + HAQ_d + age + C(sexc){pc5}',p,'AQ_d')
-            S['phased'][ep]={'cis_AQ_d':ph,'n_cases_PAV':int(p[ep].sum())}
-            print(f"   {ep}: cis-AQ_d OR={ph[0]} p={ph[1]} | PAV cases {int(p[ep].sum())}")
+            phh=logit(f'{ep} ~ AQ_d + HAQ_d + age + C(sexc){pc5}',p,'HAQ_d')
+            S['phased'][ep]={'cis_AQ_d':ph,'cis_HAQ_d':phh,'n_cases_PAV':int(p[ep].sum())}
+            print(f"   {ep}: cis-AQ_d OR={ph[0]} p={ph[1]} | cis-HAQ_d[neg-ctrl] OR={phh[0]} p={phh[1]} | PAV cases {int(p[ep].sum())}")
     except FileNotFoundError: print("   (sting_phenome_pav_v9.csv not found)"); S['phased']='(csv missing)'
     print("\n== VERDICT RULE ==")
     print("   If UNPHASED AQ->fib is significant whole-cohort but ATTENUATES within-AFR -> the fibrotic-ILD 'AQ incidence'")
