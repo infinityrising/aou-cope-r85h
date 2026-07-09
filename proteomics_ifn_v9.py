@@ -16,9 +16,15 @@ OLINK=next((p for p in _cand if os.path.exists(p)), None) or (_glob.glob(f"{MNT}
 SNP=f"{MNT}/v9/wgs/short_read/snpindel"; ANC=f"{SNP}/aux/ancestry/ancestry_preds.tsv"; VAT=f"{SNP}/aux/vat/vat_complete.bgz.tsv.gz"
 CDR="wb-silky-artichoke-2408.C2025Q4R6"; PROJ,DS=CDR.split(".",1)
 R85H_VID='19-18911007-C-T'; STINGV={'R71H':'5-139481493-C-T','G230A':'5-139478340-C-G','R293Q':'5-139477397-C-T'}
-IFN_PROT=['CXCL9','CXCL10','CXCL11']                       # IFN-inducible chemokines = plasma ISG readout
-INFLAM_PROT=['IL6','TNF','IL18','IL1B','CXCL8','CCL2']
-TARGETS=IFN_PROT+INFLAM_PROT
+# Three interferon pathways resolved at PROTEIN level (ZS: measure the LIGANDS + Type I/II/III distinctly, not just downstream type-II-biased chemokines).
+TYPE_I  =['IFNA1','IFNA2','IFNB1']                          # type-I ligands (alpha/beta) -- often near plasma detection floor on Olink; coverage/NA reported so we know if it is measurable at all
+TYPE_II =['IFNG']                                           # type-II ligand (gamma)
+TYPE_III=['IFNL1','IFNL2','IFNL3','IL29']                   # type-III ligands (lambda / IL28-29)
+CHEMO_II=['CXCL9']                                          # IFN-gamma-DOMINANT chemokine (type-II readout)
+CHEMO_SHARED=['CXCL10','CXCL11']                            # dual type-I/II-inducible chemokines (NOT type-I-specific -- this was the run-055 confound)
+INFLAM_PROT=['IL6','TNF','IL18','IL1B','CXCL8','CCL2']      # NF-kB / inflammatory
+LIGANDS=TYPE_I+TYPE_II+TYPE_III
+TARGETS=LIGANDS+CHEMO_II+CHEMO_SHARED+INFLAM_PROT
 def sh(c): return subprocess.run(['bash','-lc',c],capture_output=True,text=True).stdout
 def fnum(x):
     try: return float(x)
@@ -42,11 +48,14 @@ try:
         print("run failed: could not auto-detect Olink columns (see header above)"); print("run complete")
     else:
         pat="|".join(TARGETS)
-        raw=sh(f'zcat "{OLINK}" 2>/dev/null | awk -F"\\t" \'NR==1 || ${ai+1} ~ /^({pat})$/\'')
+        # substring /IFN/ discovers every interferon-named assay actually on the panel (ligands + receptors) in one pass; exact-match the chemokine/inflammatory set
+        raw=sh(f'zcat "{OLINK}" 2>/dev/null | awk -F"\\t" \'NR==1 || ${ai+1} ~ /IFN/ || ${ai+1} ~ /^({pat})$/\'')
         m=pd.read_csv(io.StringIO(raw),sep="\t",dtype=str)
         m['__npx']=pd.to_numeric(m[vc],errors='coerce'); m['__s']=m[sc].astype(str); m['__a']=m[ac].astype(str)
+        ifn_on_panel=sorted(a for a in m.__a.unique() if 'IFN' in a.upper())
+        print("INTERFERON assays present on this Olink panel:",ifn_on_panel)   # <- tells us whether IFN-alpha/beta/lambda are even measurable in plasma
         m=m[m.__a.isin(TARGETS)].dropna(subset=['__npx'])
-        print("target proteins found:",sorted(m.__a.unique()))
+        print("target proteins used:",sorted(m.__a.unique())); S['ifn_on_panel']=ifn_on_panel
         w=m.pivot_table(index='__s',columns='__a',values='__npx',aggfunc='mean'); w.index=w.index.astype(str)
         # ---- BRIDGE Olink SampleID -> person_id via the proteomics manifest (SampleID is a plate barcode, not person_id) ----
         MANIFEST=f"{MNT}/v9/multiomics/proteomics/manifest.tsv"
@@ -68,7 +77,11 @@ try:
             cc=[c for c in cc if c in df.columns]
             if not cc: return None
             z=(df[cc]-df[cc].mean())/df[cc].std(); return z.mean(axis=1)
-        d=pd.DataFrame(index=w.index); d['IFN_prot']=zc(w,IFN_PROT); d['inflam_prot']=zc(w,INFLAM_PROT)
+        d=pd.DataFrame(index=w.index)
+        d['typeI_IFN']=zc(w,TYPE_I); d['typeII_IFN']=zc(w,TYPE_II+CHEMO_II); d['typeIII_IFN']=zc(w,TYPE_III)
+        d['shared_chemokine']=zc(w,CHEMO_SHARED); d['inflam_prot']=zc(w,INFLAM_PROT)
+        pcov={k:[c for c in v if c in w.columns] for k,v in [('typeI_ligands',TYPE_I),('typeII(IFNG+CXCL9)',TYPE_II+CHEMO_II),('typeIII_ligands',TYPE_III),('shared_chemokine',CHEMO_SHARED),('inflam',INFLAM_PROT)]}
+        print("pathway coverage (assays used per composite):",pcov); S['pathway_coverage']=pcov
         for c in TARGETS:
             if c in w.columns: d[c]=(w[c]-w[c].mean())/w[c].std()
         d['research_id']=d.index.astype(str); print(f"Olink persons with target proteins: {len(d)}")
@@ -111,8 +124,8 @@ try:
             sub=d.dropna(subset=[y])
             try: r=smf.ols(f'{y} ~ {ex}{covs}',data=sub,missing='drop').fit(); return round(float(r.params[ex]),3),round(float(r.pvalues[ex]),4),int(sub[ex].sum())
             except Exception: return None,None,int(sub[ex].sum())
-        outc=['IFN_prot','inflam_prot']+[c for c in TARGETS if c in d.columns]
-        print("\n== plasma protein ~ exposure (beta(p)) -- 16PC + age + sex + smoking adjusted ==")
+        outc=['typeI_IFN','typeII_IFN','typeIII_IFN','shared_chemokine','inflam_prot']+[c for c in LIGANDS+CHEMO_II+CHEMO_SHARED if c in d.columns]
+        print("\n== plasma protein ~ exposure (beta(p)) -- Type I/II/III IFN RESOLVED; 16PC + age + sex + smoking adjusted ==")
         print(f"{'exposure':12s} "+" ".join(f"{o:>13s}" for o in outc))
         S['results']={}
         for ex in ['R85H','IRAK3_LoF','AQ','HAQ','R85H_x_AQ','R85H_x_HAQ']:
@@ -120,7 +133,7 @@ try:
             for o in outc:
                 b,p,nc=ols(o,ex); S['results'][ex][o]={'beta':b,'p':p,'n_carr':nc}; row.append(f"{b}({p})")
             print(f"{ex:12s} "+" ".join(f"{x:>13s}" for x in row))
-        print("\n== READ: does R85H×AQ elevate IFN_prot (CXCL9/10/11) at PROTEIN level, mirroring the RNA type-I ISG signal? ==")
+        print("\n== READ: is TYPE-I (IFN-a/b ligands) even measurable in plasma (see coverage)? does R85H×AQ elevate TYPE-I specifically, vs type-II(IFNG+CXCL9)/type-III(IFNL)? Prior CXCL9/10/11 composite was type-II-weighted -> the run-055/062 R85H×AQ null may be a pathway mismatch. ==")
         print("\n===== PROTEOMICS IFN (paste back) ====="); print(json.dumps(S,indent=1,default=str)); print("run complete")
 except Exception as e:
     import traceback; print("run failed:",type(e).__name__,str(e)[:300]); print(traceback.format_exc()[-1400:])
