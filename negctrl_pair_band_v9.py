@@ -42,8 +42,8 @@ try:
     d=pd.DataFrame(index=z.index); d['typeI_specific']=z[got].mean(axis=1); d['research_id']=d.index.astype(str)
     print(f"type-I-specific genes found: {len(got)}/{len(TYPEI)} | RNA samples {len(d)}")
     pav=pd.read_csv(PHPAV); pav['research_id']=pav.research_id.astype(str)
-    d=d.merge(pav[['research_id','AQ_d']],on='research_id',how='inner'); d['cisAQ']=(d.AQ_d>=1).astype(int)
-    RNA=set(d.research_id); print(f"RNA∩PAV {len(d)} | cisAQ {int(d.cisAQ.sum())}")
+    d=d.merge(pav[['research_id','AQ_d','HAQ_d']],on='research_id',how='inner'); d['cisAQ']=(d.AQ_d>=1).astype(int); d['cisHAQ']=(d.HAQ_d>=1).astype(int)
+    RNA=set(d.research_id); print(f"RNA∩PAV {len(d)} | cisAQ {int(d.cisAQ.sum())} | cisHAQ {int(d.cisHAQ.sum())}")
     from google.cloud import bigquery
     bq=bigquery.Client(); T=f"`{PROJ}.{DS}.cb_variant_to_person`"
     def carr(vid): return set(str(r.pid) for r in bq.query(f"SELECT DISTINCT e.element pid FROM {T}, UNNEST(person_ids.list) e WHERE vid='{vid}'"))
@@ -81,8 +81,11 @@ try:
     try:
         rr=smf.ols(f'typeI_specific ~ R85H*cisAQ{covs}',data=d,missing='drop').fit(); real_b=round(float(rr.params['R85H:cisAQ']),3); real_p=round(float(rr.pvalues['R85H:cisAQ']),4)
     except Exception: real_p=None
-    print(f"\n★ REAL: R85H:cisAQ -> typeI_specific beta={real_b} p={real_p} (double-carriers={int(((d.R85H==1)&(d.cisAQ==1)).sum())})")
-    S['real']={'beta':real_b,'p':real_p}
+    try:
+        rh=smf.ols(f'typeI_specific ~ R85H*cisHAQ{covs}',data=d,missing='drop').fit(); realh_b=round(float(rh.params['R85H:cisHAQ']),3); realh_p=round(float(rh.pvalues['R85H:cisHAQ']),4)
+    except Exception: realh_b=None; realh_p=None
+    print(f"\n★ REAL: R85H:cisAQ -> typeI_specific beta={real_b} p={real_p} (doubles={int(((d.R85H==1)&(d.cisAQ==1)).sum())}) | NEG-CTRL R85H:cisHAQ beta={realh_b} p={realh_p} (doubles={int(((d.R85H==1)&(d.cisHAQ==1)).sum())})")
+    S['real']={'beta':real_b,'p':real_p}; S['real_HAQ']={'beta':realh_b,'p':realh_p}
     # ---- sample matched neutral control variants ----
     with gzip.open(VAT,'rt') as fh: COLS=fh.readline().rstrip("\n").split("\t")
     has_eur='gvs_eur_af' in COLS
@@ -133,6 +136,10 @@ try:
         S['band_summary']={'n':len(betas),'median':round(float(np.median(arr)),3),'p95':round(float(np.percentile(arr,95)),3),'p975_abs':round(float(np.percentile(np.abs(arr),97.5)),3),'max_abs':round(float(np.max(np.abs(arr))),3),'real_signed_pct':pct,'real_abs_pct':apct}
         print(f"   band betas: median={round(float(np.median(arr)),3)} | 95th(signed)={round(float(np.percentile(arr,95)),3)} | 97.5th(|beta|)={round(float(np.percentile(np.abs(arr),97.5)),3)} | max|beta|={round(float(np.max(np.abs(arr))),3)}")
         print(f"   ★ REAL R85H:cisAQ beta={real_b} sits at the {pct}th percentile (signed) / {apct}th (|beta|, two-sided) of the null pair band")
+        if realh_b is not None:
+            hpct=round(100*float((arr<realh_b).mean()),1); hapct=round(100*float((np.abs(arr)<abs(realh_b)).mean()),1)
+            S['band_summary']['HAQ_signed_pct']=hpct; S['band_summary']['HAQ_abs_pct']=hapct
+            print(f"   ☆ NEG-CTRL R85H:cisHAQ beta={realh_b} sits at the {hpct}th percentile (signed) / {hapct}th (|beta|) -> EXPECT INSIDE the band (null), the built-in HAQ specificity contrast to cisAQ")
         verdict=("SPECIFIC (interaction beyond 95th pct of the neutral-pair null -> not a random rare×common / founder artifact)" if (real_b is not None and pct>=95) else "INSIDE THE BAND -> the interaction is NOT distinguishable from random neutral variant pairs -> weakens the centerpiece / declare non-specific")
         S['verdict']=verdict; print(f"\n== VERDICT: {verdict} ==")
     else: print("   band empty (no pairs converged) — widen AF windows / carrier ranges"); S['verdict']='band empty'
