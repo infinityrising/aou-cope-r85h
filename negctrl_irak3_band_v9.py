@@ -27,7 +27,7 @@ def is_immune(g):
     if g in EXCLUDE: return True
     if g[:2]=='IL' and len(g)>2 and g[2].isdigit(): return True   # interleukins (not ILK/ILDR/ILVBL)
     return any(g.startswith(p) for p in IMMUNE_PREFIX)
-NTARGET=40; RNA_CARR=(20,150); MIN_LOF_VIDS=2   # tighter carrier match to IRAK3(35) -> less-noisy burden betas; more genes for a stable percentile
+NTARGET=30; RNA_CARR=(20,150); MIN_LOF_VIDS=2   # tighter carrier match to IRAK3(35) -> less-noisy burden betas
 def sh(c): return subprocess.run(['bash','-lc',c],capture_output=True,text=True).stdout
 def fnum(x):
     try: return float(x)
@@ -64,15 +64,20 @@ try:
     for (ch,s,e) in WINDOWS:
         try: it=tbx.fetch('chr'+ch,int(s),int(e))
         except Exception: continue
-        nc=0
+        nc=0; gc=0; nl=0
         for line in it:
+            nl+=1
+            if nl>25000: break                                                    # per-window LINE CAP -> bounded scan (was scanning full 5Mb windows line-by-line = the hang)
             f=line.split("\t"); g=f[IX['gene_symbol']]
             if g=='' or is_immune(g): continue
             af=fnum(f[IX['gvs_afr_af']]); vid=f[IX['vid']]; cons=f[IX['consequence']]
-            if f[IX['LoF']]=='HC' and af<AFMAX: genevids.setdefault(g,set()).add(vid)                                     # LoF-gene-burden null (gene-specificity)
+            if f[IX['LoF']]=='HC' and af<AFMAX:
+                if g not in genevids: gc+=1
+                genevids.setdefault(g,set()).add(vid)                             # LoF-gene-burden null (gene-specificity)
             elif vid not in nseen and nc<8 and 0.002<=af<=0.008 and any(x in cons for x in NEUTRAL) and not any(x in cons for x in NONNEUTRAL):
-                nseen.add(vid); neut.append(vid); nc+=1                                                                   # NEUTRAL-variant null (founder/technical floor)
-        if sum(1 for vs in genevids.values() if len(vs)>=MIN_LOF_VIDS)>=NTARGET*2 and len(neut)>=NTARGET*3: break
+                nseen.add(vid); neut.append(vid); nc+=1                            # NEUTRAL-variant null (founder/technical floor)
+            if nc>=8 and gc>=6: break                                             # enough harvested from this window -> next
+        if sum(1 for vs in genevids.values() if len(vs)>=MIN_LOF_VIDS)>=NTARGET and len(neut)>=NTARGET+10: break
     genes=[g for g,vs in genevids.items() if len(vs)>=MIN_LOF_VIDS]
     print(f"IRAK3-LoF vids {len(irak3)} | candidate non-immune LoF-burden genes (>= {MIN_LOF_VIDS} rare-LoF vids): {len(genes)}")
     # batched carriers for IRAK3 + all candidate gene burdens
