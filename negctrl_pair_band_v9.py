@@ -103,6 +103,7 @@ try:
             if has_eur and fnum(f[IX['gvs_eur_af']])>EUR_MAX: continue
             if RARE_LO<=af<=RARE_HI and rn<6: seen.add(vid); rare_cand.append(vid); rn+=1
             elif COMMON_LO<=af<=COMMON_HI and cn<6: seen.add(vid); common_cand.append(vid); cn+=1
+            if rn>=6 and cn>=6: break     # stop scanning this window once full (was scanning the whole 6Mb -> the hang)
     print(f"candidate neutral controls: rare {len(rare_cand)} | common {len(common_cand)} (BATCHED carrier lookup + RNA-carrier match)")
     # BATCHED carrier lookup: all candidates in ~1-2 queries (was 1 BQ/candidate -> the slowdown)
     def carr_multi(vids):

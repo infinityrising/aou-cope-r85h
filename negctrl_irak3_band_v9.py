@@ -19,7 +19,7 @@ TYPEI={'SIGLEC1':'ENSG00000088827','IFI27':'ENSG00000165949','USP18':'ENSG000001
 IRAK3=('12',66183995,66259622)
 AFMAX=0.001                        # rare (matches IRAK3-LoF selection)
 # broad windows to harvest genes carrying rare LoF-HC variants (avoid the IFN/immune/COPI loci via EXCLUDE)
-WINDOWS=[('1',150000000,170000000),('2',70000000,110000000),('3',40000000,70000000),('4',70000000,110000000),('5',40000000,80000000),('6',30000000,60000000),('7',70000000,110000000),('8',60000000,100000000),('9',80000000,120000000),('10',60000000,100000000),('11',60000000,100000000),('12',40000000,66000000),('14',50000000,90000000),('15',60000000,90000000),('16',50000000,80000000),('17',30000000,60000000),('19',40000000,55000000),('20',30000000,50000000)]
+WINDOWS=[('1',150000000,155000000),('2',85000000,90000000),('3',50000000,55000000),('4',80000000,85000000),('5',50000000,55000000),('6',40000000,45000000),('7',80000000,85000000),('8',70000000,75000000),('9',90000000,95000000),('10',70000000,75000000),('11',65000000,70000000),('12',50000000,55000000),('14',60000000,65000000),('15',65000000,70000000),('16',60000000,65000000),('17',45000000,50000000),('19',45000000,50000000),('20',35000000,40000000)]  # ~5Mb each + outer break -> bounded scan
 EXCLUDE={'COPA','COPB1','COPB2','COPG1','COPG2','COPZ1','COPZ2','COPE','ARCN1','STING1','TMEM173','IRAK1','IRAK2','IRAK3','IRAK4','MYD88','IFIH1','DDX58','TBK1','IRF3','IRF7','TLR7','TLR9','TICAM1','TRAF3','TRAF6'}
 NTARGET=25; RNA_CARR=(8,180); MIN_LOF_VIDS=2   # match IRAK3-LoF RNA-carrier count; >=2 LoF variants per gene (a real burden)
 def sh(c): return subprocess.run(['bash','-lc',c],capture_output=True,text=True).stdout
@@ -61,6 +61,7 @@ try:
             f=line.split("\t"); g=f[IX['gene_symbol']]
             if g in EXCLUDE or g=='' or f[IX['LoF']]!='HC' or fnum(f[IX['gvs_afr_af']])>=AFMAX: continue
             genevids.setdefault(g,set()).add(f[IX['vid']])
+        if sum(1 for vs in genevids.values() if len(vs)>=MIN_LOF_VIDS)>=NTARGET*2: break   # enough candidate genes -> stop scanning windows
     genes=[g for g,vs in genevids.items() if len(vs)>=MIN_LOF_VIDS]
     print(f"IRAK3-LoF vids {len(irak3)} | candidate non-immune LoF-burden genes (>= {MIN_LOF_VIDS} rare-LoF vids): {len(genes)}")
     # batched carriers for IRAK3 + all candidate gene burdens
