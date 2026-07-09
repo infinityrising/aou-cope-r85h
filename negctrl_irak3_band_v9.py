@@ -23,10 +23,13 @@ WINDOWS=[('1',150000000,155000000),('2',85000000,90000000),('3',50000000,5500000
 EXCLUDE={'COPA','COPB1','COPB2','COPG1','COPG2','COPZ1','COPZ2','COPE','ARCN1','STING1','TMEM173','IRAK1','IRAK2','IRAK3','IRAK4','MYD88','IFIH1','DDX58','TBK1','IRF3','IRF7','TLR7','TLR9','TICAM1','TRAF3','TRAF6','RORC','RORA','HAX1','CAMP','LCN2','LTF','ZBP1','CGAS','MB21D1','TREX1','SAMHD1','ADAR','SP100','SP110','SP140','NMI','C1QA','C1QB','C1QC','C1R','C1S','C2','C3','C4A','C4B','C5','C6','C7','C8A','C8B','C9','CFB','CFH','CFI','CFD','SERPING1'}
 # CLEANED null: exclude ANY immune/inflammation/antimicrobial/ISG gene (run-074 band was contaminated by PGLYRP/RORC/HAX1/S100)
 IMMUNE_PREFIX=('IFI','IFIT','OAS','MX','GBP','RSAD','USP18','HERC','DDX58','IFIH','ISG','PGLYRP','S100A','S100B','DEFA','DEFB','CXCL','CXCR','CCL','CCR','XCL','CX3C','TNFAIP','TNFSF','TNFRSF','TLR','NLRP','NLRC','NAIP','NOD1','NOD2','CARD','AIM2','IRF','STAT','SOCS','JAK','TRIM','SIGLEC','LY6','BST2','FCGR','FCER','FCRL','HLA','TAP','PSMB8','PSMB9','MASP','FCN','CLEC4','CLEC7','TREM','SLAMF','KLR','KIR','NCR','CTLA','PDCD1','LAG3','HAVCR','TIGIT','LTB','LTA')
+_IMM={}
 def is_immune(g):
-    if g in EXCLUDE: return True
-    if g[:2]=='IL' and len(g)>2 and g[2].isdigit(): return True   # interleukins (not ILK/ILDR/ILVBL)
-    return any(g.startswith(p) for p in IMMUNE_PREFIX)
+    r=_IMM.get(g)
+    if r is None:
+        r=(g in EXCLUDE) or (g[:2]=='IL' and len(g)>2 and g[2].isdigit()) or any(g.startswith(p) for p in IMMUNE_PREFIX)
+        _IMM[g]=r                                                  # memoize: each unique gene checked ONCE (not once per variant line)
+    return r
 NTARGET=30; RNA_CARR=(20,150); MIN_LOF_VIDS=2   # tighter carrier match to IRAK3(35) -> less-noisy burden betas
 def sh(c): return subprocess.run(['bash','-lc',c],capture_output=True,text=True).stdout
 def fnum(x):
