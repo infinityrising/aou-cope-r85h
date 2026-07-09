@@ -17,7 +17,7 @@ SNP=f"{MNT}/v9/wgs/short_read/snpindel"; ANC=f"{SNP}/aux/ancestry/ancestry_preds
 CDR="wb-silky-artichoke-2408.C2025Q4R6"; PROJ,DS=CDR.split(".",1)
 R85H_VID='19-18911007-C-T'; STINGV={'R71H':'5-139481493-C-T','G230A':'5-139478340-C-G','R293Q':'5-139477397-C-T'}
 # Three interferon pathways resolved at PROTEIN level (ZS: measure the LIGANDS + Type I/II/III distinctly, not just downstream type-II-biased chemokines).
-TYPE_I  =['IFNA1','IFNA2','IFNB1','SIGLEC1','ISG15']        # ligands (usually <LOD / off-Explore) + SIGLEC1 = the ONLY type-I-SPECIFIC Olink analyte (York Arthritis Rheum 2007) + secreted ISG15
+TYPE_I  =['IFNA1','IFNA2','IFNB1','SIGLEC1','ISG15','LGALS3BP','TNFSF10','BST2','LY6E','MX1']  # ligands(<LOD/off-Explore) + SIGLEC1(only type-I-SPECIFIC Olink analyte; York 2007) + secreted type-I-IFN-induced to DISCOVER on panel: ISG15, LGALS3BP(Mac-2BP/90K), TNFSF10(TRAIL; MeMed-BV), BST2(tetherin), LY6E
 TYPE_II =['IFNG','IL18BP']                                  # IFNG (MAS/flare sensor, often <LOD) + IL18BP (IFN-gamma-inducible; Moller 2003)
 TYPE_III=['IFNL1','IFNL2','IFNL3','IL29']                   # type-III ligands (lambda / IL28-29) -- epithelial; expect near-LOD in plasma
 CHEMO_II=['CXCL9']                                          # IFN-gamma-SPECIFIC chemokine (type-II readout; Bracaglia 2017)
@@ -124,7 +124,7 @@ try:
             sub=d.dropna(subset=[y])
             try: r=smf.ols(f'{y} ~ {ex}{covs}',data=sub,missing='drop').fit(); return round(float(r.params[ex]),3),round(float(r.pvalues[ex]),4),int(sub[ex].sum())
             except Exception: return None,None,int(sub[ex].sum())
-        outc=['typeI_IFN','typeII_IFN','typeIII_IFN','shared_chemokine','inflam_prot']+[c for c in ['SIGLEC1','ISG15','IFNG','CXCL9','IL18BP','CXCL10','CXCL11','LGALS9','B2M'] if c in d.columns]
+        outc=['typeI_IFN','typeII_IFN','typeIII_IFN','shared_chemokine','inflam_prot']+[c for c in ['SIGLEC1','ISG15','LGALS3BP','TNFSF10','BST2','LY6E','IFNG','CXCL9','IL18BP','CXCL10','CXCL11','LGALS9','B2M'] if c in d.columns]
         print("\n== plasma protein ~ exposure (beta(p)) -- Type I/II/III IFN RESOLVED; 16PC + age + sex + smoking adjusted ==")
         print(f"{'exposure':12s} "+" ".join(f"{o:>13s}" for o in outc))
         S['results']={}
