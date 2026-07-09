@@ -54,24 +54,29 @@ try:
         return dd
     import pysam
     with gzip.open(VAT,'rt') as fh: COLS=fh.readline().rstrip("\n").split("\t")
-    IX={c:COLS.index(c) for c in ['vid','gene_symbol','gvs_afr_af','LoF']}
+    IX={c:COLS.index(c) for c in ['vid','gene_symbol','gvs_afr_af','LoF','consequence']}
+    NEUTRAL=('synonymous','intron','intergenic','non_coding','upstream','downstream','5_prime','3_prime'); NONNEUTRAL=('missense','stop','frameshift','splice','start_lost','stop_lost','inframe')
     tbx=pysam.TabixFile(VAT)
     # ---- IRAK3-LoF (the real burden) ----
     irak3=[l.split("\t")[IX['vid']] for l in tbx.fetch('chr'+IRAK3[0],IRAK3[1],IRAK3[2]) for f in [l.split("\t")] if f[IX['gene_symbol']]=='IRAK3' and f[IX['LoF']]=='HC' and fnum(f[IX['gvs_afr_af']])<AFMAX]
     # ---- harvest random NON-IMMUNE genes with rare LoF-HC burdens ----
-    genevids={}
+    genevids={}; neut=[]; nseen=set()
     for (ch,s,e) in WINDOWS:
         try: it=tbx.fetch('chr'+ch,int(s),int(e))
         except Exception: continue
+        nc=0
         for line in it:
             f=line.split("\t"); g=f[IX['gene_symbol']]
-            if g=='' or is_immune(g) or f[IX['LoF']]!='HC' or fnum(f[IX['gvs_afr_af']])>=AFMAX: continue
-            genevids.setdefault(g,set()).add(f[IX['vid']])
-        if sum(1 for vs in genevids.values() if len(vs)>=MIN_LOF_VIDS)>=NTARGET*2: break   # enough candidate genes -> stop scanning windows
+            if g=='' or is_immune(g): continue
+            af=fnum(f[IX['gvs_afr_af']]); vid=f[IX['vid']]; cons=f[IX['consequence']]
+            if f[IX['LoF']]=='HC' and af<AFMAX: genevids.setdefault(g,set()).add(vid)                                     # LoF-gene-burden null (gene-specificity)
+            elif vid not in nseen and nc<8 and 0.002<=af<=0.008 and any(x in cons for x in NEUTRAL) and not any(x in cons for x in NONNEUTRAL):
+                nseen.add(vid); neut.append(vid); nc+=1                                                                   # NEUTRAL-variant null (founder/technical floor)
+        if sum(1 for vs in genevids.values() if len(vs)>=MIN_LOF_VIDS)>=NTARGET*2 and len(neut)>=NTARGET*3: break
     genes=[g for g,vs in genevids.items() if len(vs)>=MIN_LOF_VIDS]
     print(f"IRAK3-LoF vids {len(irak3)} | candidate non-immune LoF-burden genes (>= {MIN_LOF_VIDS} rare-LoF vids): {len(genes)}")
     # batched carriers for IRAK3 + all candidate gene burdens
-    allv=list(set(irak3)|{v for g in genes for v in genevids[g]}); CARR=carr_multi(allv)
+    allv=list(set(irak3)|{v for g in genes for v in genevids[g]}|set(neut)); CARR=carr_multi(allv)
     def burden(vids):
         out=set()
         for v in vids: out|=CARR.get(v,set())
@@ -126,7 +131,25 @@ try:
         verdict=("SPECIFIC (IRAK3-LoF -> type-I beyond 95th pct of random rare-LoF gene burdens -> not a generic LoF-burden/founder effect)" if pct>=95 else "INSIDE THE BAND -> IRAK3-LoF's type-I elevation is NOT distinguishable from a random rare-LoF gene burden -> non-specific")
         S['verdict']=verdict; print(f"\n== VERDICT: {verdict} ==")
     else: print("   band empty (no gene burdens matched) — widen windows / carrier range"); S['verdict']='band empty'
-    print("\n== NOTE: complements run-061 Lipsitch (EMR: synonymous-IRAK3 null + neg-control outcomes null). Together = IRAK3-LoF's signal is LoF-specific (EMR) AND gene-specific (RNA type-I), not a generic rare-LoF-burden artifact. ==")
-    print("\n===== IRAK3 LoF-BURDEN BAND (paste back) ====="); print(json.dumps(S,indent=1,default=str)); print("run complete")
+    # ==== NEUTRAL-VARIANT null (PRIMARY founder/technical de-confounder; ZS: synonymous/intron like the pair band) ====
+    nband=[]
+    for v in neut:
+        cs=CARR.get(v,set())&RNA; n=len(cs)
+        if not (RNA_CARR[0]<=n<=RNA_CARR[1]): continue
+        b=main_beta(cs)
+        if b is not None: nband.append({'vid':v,'beta':b,'n':n})
+        if len(nband)>=NTARGET: break
+    nbetas=[x['beta'] for x in nband]; S['neutral_band']=nband
+    print(f"\n== ★ NEUTRAL-VARIANT null ({len(nband)} rare non-immune synonymous/intron/intergenic variants, RNA carriers {RNA_CARR}): does a FUNCTIONALLY-NEUTRAL variant show a type-I association? = the founder/technical FLOOR ==")
+    if nbetas and real_b is not None:
+        narr=np.array(nbetas); npct=round(100*float((narr<real_b).mean()),1); napct=round(100*float((np.abs(narr)<abs(real_b)).mean()),1)
+        S['neutral_summary']={'n':len(nbetas),'median':round(float(np.median(narr)),3),'p95':round(float(np.percentile(narr,95)),3),'p975_abs':round(float(np.percentile(np.abs(narr),97.5)),3),'IRAK3_signed_pct':npct,'IRAK3_abs_pct':napct}
+        print(f"   neutral floor: median={round(float(np.median(narr)),3)} | 95th(signed)={round(float(np.percentile(narr,95)),3)} | 97.5th(|beta|)={round(float(np.percentile(np.abs(narr),97.5)),3)}")
+        print(f"   ★★ REAL IRAK3-LoF beta={real_b} = {npct}th percentile (signed) / {napct}th (|beta|) of the NEUTRAL floor")
+        nverdict=("REAL / ABOVE FOUNDER-FLOOR (IRAK3-LoF→type-I beyond 95th pct of functionally-NEUTRAL variants → NOT a founder/technical artifact)" if npct>=95 else "within the neutral floor → not distinguishable from founder/technical noise")
+        S['neutral_verdict']=nverdict; print(f"   == NEUTRAL-NULL VERDICT: {nverdict} ==")
+    else: print("   neutral band empty")
+    print("\n== TWO NULLS: (1) NEUTRAL-variant floor = is the effect REAL vs founder/technical noise (PRIMARY; parallels the pair band + run-061 Lipsitch synonymous-null). (2) LoF-gene-burden = is IRAK3 SPECIAL among knockouts (harder; generic-LoF-sensitive). Real+above-neutral is the load-bearing claim; gene-specificity is the bonus. ==")
+    print("\n===== IRAK3 BANDS (neutral + LoF-gene) (paste back) ====="); print(json.dumps(S,indent=1,default=str)); print("run complete")
 except Exception as e:
     import traceback; print("run failed:",type(e).__name__,str(e)[:300]); print(traceback.format_exc()[-1400:])
