@@ -100,12 +100,21 @@ try:
             if has_eur and fnum(f[IX['gvs_eur_af']])>EUR_MAX: continue
             if RARE_LO<=af<=RARE_HI and rn<6: seen.add(vid); rare_cand.append(vid); rn+=1
             elif COMMON_LO<=af<=COMMON_HI and cn<6: seen.add(vid); common_cand.append(vid); cn+=1
-    print(f"candidate neutral controls: rare {len(rare_cand)} | common {len(common_cand)} (screening for RNA-carrier match)")
-    # screen candidates to RNA-carrier ranges matched to R85H(rare)/cisAQ(common)
+    print(f"candidate neutral controls: rare {len(rare_cand)} | common {len(common_cand)} (BATCHED carrier lookup + RNA-carrier match)")
+    # BATCHED carrier lookup: all candidates in ~1-2 queries (was 1 BQ/candidate -> the slowdown)
+    def carr_multi(vids):
+        dd={}
+        for i in range(0,len(vids),700):
+            chunk=vids[i:i+700]
+            if not chunk: continue
+            inl=",".join("'"+v+"'" for v in chunk)
+            for r in bq.query(f"SELECT vid, e.element pid FROM {T}, UNNEST(person_ids.list) e WHERE vid IN ({inl})"): dd.setdefault(str(r.vid),set()).add(str(r.pid))
+        return dd
+    CARR=carr_multi(rare_cand+common_cand)
     def screen(cands,lo,hi,target):
         out=[]
         for v in cands:
-            cs=carr(v)&RNA; n=len(cs)
+            cs=CARR.get(v,set())&RNA; n=len(cs)
             if lo<=n<=hi: out.append((v,cs))
             if len(out)>=target: break
         return out
