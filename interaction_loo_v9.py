@@ -12,7 +12,7 @@ TPM=f"{RNADIR}/rsem/aou_rnaseq_20260415.rsem_genes_tpm.txt.gz"; ANC=f"{SNP}/aux/
 CELL=os.path.expanduser("~/cell_fractions_v9.csv"); PHPAV=os.path.expanduser("~/sting_phenome_pav_v9.csv")
 CDR="wb-silky-artichoke-2408.C2025Q4R6"; PROJ,DS=CDR.split(".",1)
 R85H_VID='19-18911007-C-T'; STINGV={'R71H':'5-139481493-C-T','G230A':'5-139478340-C-G','R293Q':'5-139477397-C-T'}
-ISG={'IFI27':'ENSG00000165949','IFI44L':'ENSG00000137959','IFIT1':'ENSG00000185745','ISG15':'ENSG00000187608','RSAD2':'ENSG00000134321','SIGLEC1':'ENSG00000088827'}
+ISG={'SIGLEC1':'ENSG00000088827','IFI27':'ENSG00000165949','USP18':'ENSG00000184979','IFI6':'ENSG00000126709','IFI44L':'ENSG00000137959'}  # TYPE-I-SPECIFIC (refined per IFN-type regimen; was the type-I-weighted 6-gene)
 def sh(c): return subprocess.run(['bash','-lc',c],capture_output=True,text=True).stdout
 def fnum(x):
     try: return float(x)

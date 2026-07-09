@@ -17,14 +17,14 @@ SNP=f"{MNT}/v9/wgs/short_read/snpindel"; ANC=f"{SNP}/aux/ancestry/ancestry_preds
 CDR="wb-silky-artichoke-2408.C2025Q4R6"; PROJ,DS=CDR.split(".",1)
 R85H_VID='19-18911007-C-T'; STINGV={'R71H':'5-139481493-C-T','G230A':'5-139478340-C-G','R293Q':'5-139477397-C-T'}
 # Three interferon pathways resolved at PROTEIN level (ZS: measure the LIGANDS + Type I/II/III distinctly, not just downstream type-II-biased chemokines).
-TYPE_I  =['IFNA1','IFNA2','IFNB1']                          # type-I ligands (alpha/beta) -- often near plasma detection floor on Olink; coverage/NA reported so we know if it is measurable at all
-TYPE_II =['IFNG']                                           # type-II ligand (gamma)
-TYPE_III=['IFNL1','IFNL2','IFNL3','IL29']                   # type-III ligands (lambda / IL28-29)
-CHEMO_II=['CXCL9']                                          # IFN-gamma-DOMINANT chemokine (type-II readout)
-CHEMO_SHARED=['CXCL10','CXCL11']                            # dual type-I/II-inducible chemokines (NOT type-I-specific -- this was the run-055 confound)
+TYPE_I  =['IFNA1','IFNA2','IFNB1','SIGLEC1','ISG15']        # ligands (usually <LOD / off-Explore) + SIGLEC1 = the ONLY type-I-SPECIFIC Olink analyte (York Arthritis Rheum 2007) + secreted ISG15
+TYPE_II =['IFNG','IL18BP']                                  # IFNG (MAS/flare sensor, often <LOD) + IL18BP (IFN-gamma-inducible; Moller 2003)
+TYPE_III=['IFNL1','IFNL2','IFNL3','IL29']                   # type-III ligands (lambda / IL28-29) -- epithelial; expect near-LOD in plasma
+CHEMO_II=['CXCL9']                                          # IFN-gamma-SPECIFIC chemokine (type-II readout; Bracaglia 2017)
+CHEMO_SHARED=['CXCL10','CXCL11','LGALS9','B2M']             # dual type-I/II-inducible -- NOT type-I-specific (the run-055/062 confound)
 INFLAM_PROT=['IL6','TNF','IL18','IL1B','CXCL8','CCL2']      # NF-kB / inflammatory
-LIGANDS=TYPE_I+TYPE_II+TYPE_III
-TARGETS=LIGANDS+CHEMO_II+CHEMO_SHARED+INFLAM_PROT
+LIGANDS=['IFNA1','IFNA2','IFNB1','IFNG','IFNL1','IFNL2','IFNL3','IL29']   # the actual IFN ligands (discovery/coverage)
+TARGETS=list(dict.fromkeys(TYPE_I+TYPE_II+TYPE_III+CHEMO_II+CHEMO_SHARED+INFLAM_PROT))
 def sh(c): return subprocess.run(['bash','-lc',c],capture_output=True,text=True).stdout
 def fnum(x):
     try: return float(x)
@@ -124,7 +124,7 @@ try:
             sub=d.dropna(subset=[y])
             try: r=smf.ols(f'{y} ~ {ex}{covs}',data=sub,missing='drop').fit(); return round(float(r.params[ex]),3),round(float(r.pvalues[ex]),4),int(sub[ex].sum())
             except Exception: return None,None,int(sub[ex].sum())
-        outc=['typeI_IFN','typeII_IFN','typeIII_IFN','shared_chemokine','inflam_prot']+[c for c in LIGANDS+CHEMO_II+CHEMO_SHARED if c in d.columns]
+        outc=['typeI_IFN','typeII_IFN','typeIII_IFN','shared_chemokine','inflam_prot']+[c for c in ['SIGLEC1','ISG15','IFNG','CXCL9','IL18BP','CXCL10','CXCL11','LGALS9','B2M'] if c in d.columns]
         print("\n== plasma protein ~ exposure (beta(p)) -- Type I/II/III IFN RESOLVED; 16PC + age + sex + smoking adjusted ==")
         print(f"{'exposure':12s} "+" ".join(f"{o:>13s}" for o in outc))
         S['results']={}

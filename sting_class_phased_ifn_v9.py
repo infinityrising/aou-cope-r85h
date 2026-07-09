@@ -16,8 +16,9 @@ CELL=os.path.expanduser("~/cell_fractions_v9.csv"); PHPAV=os.path.expanduser("~/
 CDR="wb-silky-artichoke-2408.C2025Q4R6"; PROJ,DS=CDR.split(".",1)
 R85H_VID='19-18911007-C-T'; STINGV={'R71H':'5-139481493-C-T','G230A':'5-139478340-C-G','R293Q':'5-139477397-C-T'}
 MODULES={
- 'typeI_ISG':{'IFI27':'ENSG00000165949','IFI44L':'ENSG00000137959','IFIT1':'ENSG00000185745','ISG15':'ENSG00000187608','RSAD2':'ENSG00000134321','SIGLEC1':'ENSG00000088827'},
- 'typeII_IFNg':{'CXCL9':'ENSG00000138755','CXCL10':'ENSG00000169245','CXCL11':'ENSG00000169248','GBP1':'ENSG00000117228','GBP5':'ENSG00000154451','STAT1':'ENSG00000115415','IRF1':'ENSG00000125347','IDO1':'ENSG00000131203'},
+ 'typeI_specific':{'SIGLEC1':'ENSG00000088827','IFI27':'ENSG00000165949','USP18':'ENSG00000184979','IFI6':'ENSG00000126709','IFI44L':'ENSG00000137959'},  # type-I-PREFERENTIAL (Nombel 2025; Kim 2024)
+ 'typeII_IFNg':{'CXCL9':'ENSG00000138755','GBP5':'ENSG00000154451','GBP1':'ENSG00000117228','IDO1':'ENSG00000131203','ANKRD22':'ENSG00000152766'},  # IFN-γ-SPECIFIC (CXCL10/11 dropped -> shared)
+ 'sharedISG_tone':{'ISG15':'ENSG00000187608','RSAD2':'ENSG00000134321','IFIT1':'ENSG00000185745','MX1':'ENSG00000157601','OAS1':'ENSG00000089127'},  # pan type-I/II = IFN tone, not a type
  'NFkB':{'TNF':'ENSG00000232810','IL6':'ENSG00000136244','IL1B':'ENSG00000125538','NFKBIA':'ENSG00000100906','CXCL8':'ENSG00000169429','CCL2':'ENSG00000108691','NFKB1':'ENSG00000109320','TNFAIP3':'ENSG00000118503'},
 }
 ALL_ENSG={e for m in MODULES.values() for e in m.values()}
@@ -98,18 +99,18 @@ try:
         print(f"   {mod:12s} cisAQ {fmt('cisAQ'):>15} | cisHAQ {fmt('cisHAQ'):>15} | R85H {fmt('R85H'):>15} | IRAK3 {fmt('IRAK3_LoF'):>15}")
     print("\n== (2) PHASED INTERACTION: module ~ R85H*cisAQ + R85H*cisHAQ  (predict R85H:cisAQ>0, R85H:cisHAQ~0/neg) ==")
     S['interaction']={}
-    for mod in ['typeI_ISG','typeII_IFNg','NFkB']:
+    for mod in ['typeI_specific','typeII_IFNg','sharedISG_tone','NFkB']:
         o=fit(f'{mod} ~ R85H*cisAQ + R85H*cisHAQ{covs}',['R85H','cisAQ','cisHAQ','R85H:cisAQ','R85H:cisHAQ']); S['interaction'][mod]=o
         fmt=lambda t: f"{o[t]['beta']}(p{o[t]['p']})" if o.get(t) else "na"
         print(f"   {mod:12s} R85H {fmt('R85H'):>13} cisAQ {fmt('cisAQ'):>13} cisHAQ {fmt('cisHAQ'):>13} | R85H:cisAQ {fmt('R85H:cisAQ'):>13} R85H:cisHAQ {fmt('R85H:cisHAQ'):>13}")
-    print("\n== (3) type-I ISG mean (z) by PHASED STING class × R85H ==")
+    print("\n== (3) TYPE-I-SPECIFIC score mean (z) by PHASED STING class × R85H ==")
     S['strata']={}
     for cls in ['WT','AQ','HAQ']:
         for r in [0,1]:
-            g=d[(d.sting==cls)&(d.R85H==r)]; mn=round(float(g.typeI_ISG.mean()),3) if len(g) else None
-            S['strata'][f'{cls}_R85H{r}']={'n':int(len(g)),'mean_typeI_ISG':mn}
-            print(f"   {cls:3s} R85H={r}: n={len(g):>5} mean typeI_ISG z = {mn}")
-    print("\n== READ (PHASED = definitive): cisHAQ main<=0? R85H:cisAQ>0 (unmasked)? R85H:cisHAQ~0 (HAQ phased negative control)? ==")
+            g=d[(d.sting==cls)&(d.R85H==r)]; mn=round(float(g.typeI_specific.mean()),3) if len(g) else None
+            S['strata'][f'{cls}_R85H{r}']={'n':int(len(g)),'mean_typeI_specific':mn}
+            print(f"   {cls:3s} R85H={r}: n={len(g):>5} mean typeI_specific z = {mn}")
+    print("\n== READ (PHASED = definitive): is R85H:cisAQ>0 on typeI_SPECIFIC (SIGLEC1/IFI27/USP18) but ~0 on typeII_IFNg -> TYPE-I-SELECTIVE unmasking? cisHAQ main<=0? R85H:cisHAQ~0 (phased neg control)? ==")
     print("\n===== PHASED STING-CLASS IFN (paste back) ====="); print(json.dumps(S,indent=1,default=str)); print("run complete")
 except Exception as e:
     import traceback; print("run failed:",type(e).__name__,str(e)[:300]); print(traceback.format_exc()[-1200:])
